@@ -1,0 +1,44 @@
+[
+    {
+        "model": "master.emiratemaster", 
+        "fields": {
+            "name": "Ajman"
+            }
+    },
+    {
+        "model": "master.emiratemaster", 
+        "fields": {
+            "name": "Abudhabi"
+            }
+    },
+    {
+        "model": "master.emiratemaster", 
+        "fields": {
+            "name": "Dubai"
+            }
+    },
+    {
+        "model": "master.emiratemaster", 
+        "fields": {
+            "name": "Sharjah"
+            }
+    },
+    {
+        "model": "master.emiratemaster", 
+        "fields": {
+            "name": "Fujeirah"
+            }
+    },
+    {
+        "model": "master.emiratemaster", 
+        "fields": {
+            "name": "Ras Al Khaimah"
+            }
+    },
+    {
+        "model": "master.emiratemaster", 
+        "fields": {
+            "name": "Umm Al Quain"
+            }
+    } 
+]

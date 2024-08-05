@@ -5,6 +5,7 @@ from django.contrib.auth.models import AbstractUser,Group,Permission
 from coupon_management.models import Coupon
 from master.models import *
 from product.models import ProdutItemMaster
+from ckeditor.fields import RichTextField
 
 class CustomUser(AbstractUser):
     USER_TYPE_CHOICES = (
@@ -119,7 +120,7 @@ class Customers(models.Model):
     def get_water_rate(self):
         from decimal import Decimal
 
-        if Decimal(self.rate) > 0:
+        if self.rate != None and Decimal(self.rate) > 0:
             rate = Decimal(self.rate)
         else:
             rate = Decimal(ProdutItemMaster.objects.get(product_name="5 Gallon").rate)
@@ -224,3 +225,19 @@ class CustomerRateHistory(models.Model):
 
     def __str__(self):
         return f"{self.customer.customer_name} - {self.created_date}"
+
+class TermsAndConditions(models.Model):
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    created_by = models.CharField(max_length=20,  blank=True)
+    created_date = models.DateTimeField(auto_now_add=True,blank=True, null=True)
+    modified_by = models.CharField(max_length=20, null=True, blank=True)
+    modified_date = models.DateTimeField(blank=True, null=True)
+    
+    description = RichTextField()
+    
+    class Meta:
+        ordering = ('-created_date',)
+
+    def __str__(self):
+        return f"Terms and Conditions - {self.created_date}"
+
