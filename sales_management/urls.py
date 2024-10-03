@@ -31,6 +31,7 @@ urlpatterns = [
     path('collectionreport', collectionreport, name='collectionreport'),
     # path('dailycollectionreport', dailycollectionreport, name='dailycollectionreport'),
     path('collection_report_excel/', collection_report_excel, name='collection_report_excel'),
+    path('print_collection_report/', print_collection_report, name='print_collection_report'),
     # path('daily_collection_report_excel/', daily_collection_report_excel, name='daily_collection_report_excel'),
 
     # path('create-sale/', SaleEntryCreateView.as_view(), name='create_sale'),
@@ -49,7 +50,6 @@ urlpatterns = [
 
 
     path('customerSales_report',customerSales_report, name='customerSales_report'),
-    path('customerSales_Detail_report/<uuid:id>/', customerSales_Detail_report, name='customerSales_Detail_report'),
     path('customerSales_Excel_report',customerSales_Excel_report, name='customerSales_Excel_report'),
     path('customerSales_Print_report',customerSales_Print_report, name='customerSales_Print_report'),
 
@@ -111,5 +111,15 @@ urlpatterns = [
     
     #------------------DSR Outstanding Amount Collected Report-------------------------------------
     path('outstanding_amount_collected',outstanding_amount_collected, name='outstanding_amount_collected'),
+
+    path('dsr/', dsr, name='dsr'),
+    path('print-dsr/', print_dsr, name='print_dsr'),
+    
+    path('collection_list/', collection_list_view, name='collection_list'),
+    path('delete_collection_payment/<str:receipt_number>/<uuid:customer_id>/', delete_collection_payment, name='delete_collection_payment'),
+    
+    path('coupon_sales_report/', coupon_sales_report_view, name='coupon_sales_report'),
+    path('coupon_sales_excel/', coupon_sales_excel_view, name='coupon_sales_excel'),
+    path('coupon_sales_print/', coupon_sales_print_view, name='coupon_sales_print'),
 
 ]

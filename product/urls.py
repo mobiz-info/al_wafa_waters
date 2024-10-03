@@ -30,7 +30,8 @@ urlpatterns = [
     path('product_items_create',Product_items_Create.as_view(), name='product_items_create'),
     path('product_item_edit/<str:pk>',Product_Item_Edit.as_view(), name='product_item_edit'),
     # path('product_item_delete/<str:pk>/',delete_product_item, name='product_item_delete'),
-    re_path(r'^product_item_delete/(?P<pk>.*)/$', views.delete_product_item, name='delete_product_item'),
+    path('product_item_delete/<uuid:pk>/', views.delete_product_item, name='delete_product_item'),
+    # re_path(r'^product_item_delete/(?P<pk>.*)/$', views.delete_product_item, name='delete_product_item'),
 
     path('product_stock_report', product_stock_report, name='product_stock_report'),
     path('download_productstock_pdf', download_productstock_pdf, name='download_productstock_pdf'),
@@ -38,6 +39,13 @@ urlpatterns = [
     path('stocktransfer/', stock_transfer_view, name='stocktransfer'),
     path('scrap_stock_transfer_view/', scrap_stock_transfer_view, name='scrap_stock_transfer_view'),
 
-
+    re_path(r'production-damage-reason-list/$', views.production_damage_reason_list, name='production_damage_reason_list'),
+    re_path(r'create-production-damage-reason/$', views.create_production_damage_reason, name='create_production_damage_reason'),
+    re_path(r'^edit-production-damage-reason/(?P<pk>.*)/$', views.edit_production_damage_reason, name='edit_production_damage_reason'),
+    re_path(r'^delete-production-damage-reason/(?P<pk>.*)/$', views.delete_production_damage_reason, name='delete_production_damage_reason'),
+    
+    re_path(r'production-damage-list/$', views.production_damage_list, name='production_damage_list'),
+    re_path(r'create-production-damage/$', views.create_production_damage, name='create_production_damage'),
+    re_path(r'^edit-production-damage/(?P<pk>.*)/$', views.edit_production_damage, name='edit_production_damage'),
+    re_path(r'^delete-production-damage/(?P<pk>.*)/$', views.delete_production_damage, name='delete_production_damage'),
    ]
-

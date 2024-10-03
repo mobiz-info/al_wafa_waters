@@ -8,9 +8,10 @@ from accounts.models import CustomUser, Customers
 from client_management.models import CustomerOutstanding, OutstandingAmount, CustomerOutstandingReport
 from invoice_management.models import Invoice, InvoiceItems
 from product.models import ProdutItemMaster
+from sales_management.models import CollectionPayment
 
 # Read the Excel file
-file_path = '/home/ra/Downloads/S-38-1.xlsx'
+file_path = '/home/ra/Downloads/S-23Book1.xlsx'
 data = pd.read_excel(file_path)
 print("File path:", file_path)
 print("DataFrame columns:", data.columns)
@@ -28,7 +29,13 @@ if 'amount' not in data.columns:
 
 @transaction.atomic
 def populate_models_from_excel(data):
-    user = CustomUser.objects.get(username="S-38")
+    user = CustomUser.objects.get(username="S-23")
+    # outstanding_in = CustomerOutstanding.objects.filter(customer__sales_staff=user,product_type='amount')
+    # Invoice.objects.filter(customer__sales_staff=user).delete()
+    # outstanding_in.delete()
+    # CustomerOutstandingReport.objects.filter(customer__sales_staff=user,product_type='amount').delete()
+    # CollectionPayment.objects.filter(salesman=user).delete()
+    
     for index, row in data.iterrows():
         customer_id = row['customer_id']
         customer_name = row['customer_name']
@@ -45,7 +52,7 @@ def populate_models_from_excel(data):
         except Customers.DoesNotExist:
             print(f"Customer {customer_name} does not exist.")
             continue
-
+        
         customer_outstanding = CustomerOutstanding.objects.create(
             customer=customer,
             product_type='amount',

@@ -121,7 +121,7 @@ class CustomercreateForm(forms.ModelForm):
     class Meta:
         
         model = Customers
-        fields = ['customer_name','building_name','door_house_no','floor_no','sales_staff','routes','emirate','location','mobile_no','whats_app','email_id','gps_latitude','gps_longitude','customer_type','rate','sales_type','no_of_bottles_required','max_credit_limit','credit_days','no_of_permitted_invoices']
+        fields = ['customer_name','building_name','door_house_no','floor_no','sales_staff','routes','emirate','location','mobile_no','whats_app','email_id','gps_latitude','gps_longitude','customer_type','rate','sales_type','no_of_bottles_required','max_credit_limit','credit_days','no_of_permitted_invoices','is_calling_customer']
         widgets = {
             'customer_name': forms.TextInput(attrs={'class': 'form-control', 'required': 'true'}),
             'building_name': forms.TextInput(attrs={'class': 'form-control', 'required': 'true'}),
@@ -155,7 +155,7 @@ class CustomerEditForm(forms.ModelForm):
 
     class Meta:
         model = Customers
-        fields = ['customer_name','building_name','door_house_no','floor_no','sales_staff','routes','location','mobile_no','whats_app','email_id','gps_latitude','gps_longitude','customer_type','rate','sales_type','no_of_bottles_required','max_credit_limit','credit_days','no_of_permitted_invoices','is_active']
+        fields = ['customer_name','building_name','door_house_no','floor_no','sales_staff','routes','location','mobile_no','whats_app','email_id','gps_latitude','gps_longitude','customer_type','rate','sales_type','no_of_bottles_required','max_credit_limit','credit_days','no_of_permitted_invoices','is_active','is_calling_customer']
         widgets = {
             'customer_name': forms.TextInput(attrs={'class': 'form-control', 'required': 'true'}),
             'building_name': forms.TextInput(attrs={'class': 'form-control', 'required': 'true'}),
@@ -209,3 +209,26 @@ class VisitScheduleForm(forms.Form):
     week2 = forms.CharField(required=False)
     week3 = forms.CharField(required=False)
     week4 = forms.CharField(required=False)
+    
+from django.contrib.auth import get_user_model
+from django.contrib.auth.forms import SetPasswordForm
+CustomUser = get_user_model()
+
+class CustomPasswordChangeForm(SetPasswordForm):
+    new_password1 = forms.CharField(
+        label="New Password",
+        widget=forms.PasswordInput(attrs={'class': 'form-control'}),
+    )
+    new_password2 = forms.CharField(
+        label="Confirm New Password",
+        widget=forms.PasswordInput(attrs={'class': 'form-control'}),
+    )
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.fields['new_password1'].widget.attrs.update({'class': 'form-control'})
+        self.fields['new_password2'].widget.attrs.update({'class': 'form-control'})
+
+    class Meta:
+        model = CustomUser
+        fields = ['new_password1', 'new_password2']

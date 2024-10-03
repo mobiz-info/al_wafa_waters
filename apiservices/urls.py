@@ -176,6 +176,7 @@ urlpatterns = [
     path('collectionreport/', CollectionReportAPI.as_view(), name='collectionreport'),
 
     path('coupon_supply_count/<int:salesman_id>/', CouponSupplyCountAPIView.as_view(), name='coupon_supply_count'),
+    path('coupon_sales_count/<int:salesman_id>/', Coupon_Sales_APIView.as_view(), name='coupon_sales_count'),
 
     path('redeemed_history/', RedeemedHistoryAPI.as_view(), name='redeemed_history'),
 
@@ -293,9 +294,28 @@ urlpatterns = [
     path('scrap_stock/', ScrapStockAPIView.as_view(), name='scrap_stock'),
     path('add-damage-bottle/', addDamageBottleAPIView.as_view(), name='add_damage_bottle'),
     
-    path('excess-bottle-count/', ExcessBottleCount.as_view(), name='excess_bottle_count'),
+    path('production-damage-choices/', ProductTransferChoicesAPI.as_view(), name='production_damage_choices'),
+    path('production-damage/', ProductionDamageAPIView.as_view(), name='production_damage'),
+    
+    path('customer-product-return/', CustomerProductReturnAPIView.as_view(), name='customer_product_return'),
+    path('customer-product-replacement/', CustomerProductReplaceAPIView.as_view(), name='customer_product_replacement'),
+    
+    path('excess-bottle-count/', ExcessBottleCountAPIView.as_view(), name='excess_bottle_count'),
 
     path('privacy-policy/', privacy),
     
     path('terms_and_conditions/', terms_and_conditions),
+    path('customers_coupons/<uuid:customer_id>/', CustomerCouponListAPIView.as_view(), name='customer-coupon-list'),
+    
+    path('credit-note-list/', CreditNoteListAPI.as_view(), name='credit_note_list'),
+    path('product-route-salesreport/', ProductRouteSalesReportAPIView.as_view(), name='product_route_salesreport_api'),
+    
+    path('sales-invoices/', SalesInvoicesAPIView.as_view(), name='sales_invoices'),
+    path('customer-supply-list/', CustomerSupplyListAPIView.as_view(), name='customer-supply-list'),
+    
+    path('customer-cart/', CustomerCartAPIView.as_view(), name='customer_cart'),
+    
+    path('customer-outstandings-amount-report/', CustomersOutstandingAmountsAPI.as_view(), name='customers_outstandings_amount_reports'),
+    path('customer-outstandings-bottles-report/', CustomersOutstandingBottlesAPI.as_view(), name='customers_outstandings_bottles_reports'),
+    path('customer-outstandings-coupon-report/', CustomersOutstandingCouponsAPI.as_view(), name='customers_outstandings_coupons_reports'),
 ]

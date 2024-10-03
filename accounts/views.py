@@ -35,6 +35,10 @@ from customer_care.models import *
 from apiservices.views import find_customers
 from van_management.models import Van_Routes,Van,VanProductStock
 
+from django.contrib.auth import update_session_auth_hash
+from django.shortcuts import render, redirect, get_object_or_404
+from .forms import CustomPasswordChangeForm
+
 # Create your views here.
 def user_login(request):
     template_name = 'registration/user_login.html'
@@ -48,12 +52,24 @@ def user_login(request):
         if user is not None:
             if user.is_active:
                 login(request, user)
+                log_activity(
+                    created_by=username,
+                    description=f"User {username} logged in successfully."
+                )
                 return redirect('dashboard')
             else:
                 context = {'error_msg': 'Invalid Username or Password'}
+                log_activity(
+                    created_by=username,
+                    description=f"User {username} failed to log in due to incorrect username or password."
+                )
                 return render(request, template_name, context)
         else:
             context = {'error_msg': 'User Doest Not exist'}
+            log_activity(
+                created_by=username,
+                description=f"Login attempt failed: User {username} does not exist."
+            )
             return render(request, template_name, context)
         
     return render(request, template_name)   
@@ -61,36 +77,73 @@ def user_login(request):
 class UserLogout(View):
 
     def get(self, request):
-        try:
+        try: 
+            user = request.user
+            username = user.username if user.is_authenticated else 'Unknown User'
+            
             logout(request)
             messages.success(request, 'Successfully logged out', extra_tags='success')
+            log_activity(
+                created_by=username,
+                description=f"User {username} logged out successfully."
+            )
             return redirect("login")
         except Exception as e:
-            # Handle exceptions if necessary
+            log_activity(
+                created_by=username,
+                description=f"An error occurred while {username} was trying to log out: {str(e)}"
+            )
             messages.error(request, 'An error occurred while logging out', extra_tags='danger')
             return redirect("login")
         
 class Users_List(View):
-    template_name = 'accounts/user_list.html'
+    
+    template_name = 'accounts/user_list.html'  
 
     def get(self, request, *args, **kwargs):
-        query = request.GET.get("q")
-
-        instances = CustomUser.objects.filter(user_type__in=['Driver','Salesman','Supervisor','Manager','Customer Care','Accounts'])
-        if query:
-            instances = instances.filter(
-                Q(first_name__icontains=query) |
-                Q(designation_id__designation_name__icontains=query) |
-                Q(staff_id__icontains=query) |
-                Q(username__icontains=query) |
-                Q(branch_id__name__icontains=query) 
+        users = CustomUser.objects.exclude(user_type__in=[ 'Customers','Customer','customers','customer'])
+        
+        user = request.user
+        username = user.username if user.is_authenticated else 'Unknown User'
+        log_activity(
+                created_by=username,
+                description=f"User {username} accessed the Users List."
             )
-
+        
         context = {
-            'instances': instances,
-            'q': query
-            }
+            'instances': users
+        }
         return render(request, self.template_name, context)
+    # template_name = 'accounts/user_list.html'
+    
+    # def get(self, request, *args, **kwargs):
+    #     query = request.GET.get("q")
+    #     user = request.user
+    #     username = user.username if user.is_authenticated else 'Unknown User'
+    #     instances = CustomUser.objects.all().exclude(user_type__in=['Customers','Customer','customers','customer'])
+    #     if query:
+    #         instances = instances.filter(
+    #             Q(first_name__icontains=query) |
+    #             Q(designation_id__designation_name__icontains=query) |
+    #             Q(staff_id__icontains=query) |
+    #             Q(username__icontains=query) |
+    #             Q(branch_id__name__icontains=query) 
+    #         )
+    #         log_activity(
+    #             created_by=username,
+    #             description=f"User {username} performed a search in Users List with query: '{query}'."
+    #         )
+    #     else:
+    #         # Log accessing the users list without search
+    #         log_activity(
+    #             created_by=username,
+    #             description=f"User {username} accessed the Users List."
+    #         )
+    #     context = {
+    #         'instances': instances,
+    #         'q': query
+    #         }
+    #     return render(request, self.template_name, context)
 
 class User_Create(View):
     template_name = 'accounts/user_create.html'
@@ -107,10 +160,19 @@ class User_Create(View):
             passw = make_password(data.password)
             data.password = passw
             data.save()
+            
+            log_activity(
+                created_by=request.user.username,
+                description=f"User {data.username} created successfully by {request.user.username}."
+            )
+            
             messages.success(request, 'User Successfully Added.', 'alert-success')
             return redirect('users')
         else:
-            #print(form.errors)
+            log_activity(
+                created_by=request.user.username,
+                description=f"User creation failed due to form validation errors by {request.user.username}."
+            )
             for field, errors in form.errors.items():
                 for error in errors:
                     print(f"Field: {field}, Error: {error}")
@@ -137,10 +199,19 @@ class User_Edit(View):
             #data.modified_by = request.user
             data.modified_date = datetime.now()
             data.save()
+            
+            log_activity(
+                created_by=request.user.username,
+                description=f"User {data.username} was updated successfully by {request.user.username}."
+            )
+            
             messages.success(request, 'User Data Successfully Updated', 'alert-success')
             return redirect('users')
         else:
-            #print(form.errors)
+            log_activity(
+                created_by=request.user.username,
+                description=f"User update failed for {rec.username} due to form validation errors by {request.user.username}."
+            )
             messages.success(request, 'Data is not valid.', 'alert-danger')
             context = {'form': form}
             return render(request, self.template_name, context)
@@ -151,6 +222,10 @@ class User_Details(View):
     def get(self, request, pk, *args, **kwargs):
         user_det = CustomUser.objects.get(id=pk)
         context = {'user_det': user_det}
+        log_activity(
+            created_by=request.user.username,
+            description=f"User details for {user_det.username} were viewed by {request.user.username}."
+        )
         return render(request, self.template_name, context)  
     
 class User_Delete(View):
@@ -163,6 +238,10 @@ class User_Delete(View):
     def post(self, request, pk, *args, **kwargs):
         user = get_object_or_404(CustomUser, id=pk)
         user.delete()
+        log_activity(
+            created_by=request.user.username,
+            description=f"User {request.user.username} was deleted by {request.user.username}."
+        )
         messages.success(request, 'User Successfully Deleted.', 'alert-success')
         return redirect('users')
 # class Customer_List(View):
@@ -252,9 +331,11 @@ class Customer_List(View):
     template_name = 'accounts/customer_list.html'
 
     def get(self, request, *args, **kwargs):
+        filter_data = {}
         # Retrieve the query parameter
         query = request.GET.get("q")
         route_filter = request.GET.get('route_name')
+        customer_type_filter = request.GET.get('customer_type')
 
         # Start with all customers
         user_li = Customers.objects.all()
@@ -268,18 +349,29 @@ class Customer_List(View):
                 Q(location__location_name__icontains=query) |
                 Q(building_name__icontains=query)
             )
+            filter_data['q'] = query
 
         if route_filter:
             user_li = user_li.filter(routes__route_name=route_filter)
+            filter_data['route_filter'] = route_filter
+            
+        if customer_type_filter:
+            user_li = user_li.filter(sales_type=customer_type_filter)
+            filter_data['customer_type'] = customer_type_filter
 
         # Get all route names for the dropdown
         route_li = RouteMaster.objects.all()
         
+        log_activity(
+            created_by=request.user, 
+            description=f"Viewed customer list with filters: {filter_data}"
+        )
         context = {
             'user_li': user_li.order_by("-created_date"),
             'route_li': route_li,
             'route_filter': route_filter,
             'q': query,
+            'filter_data': filter_data,
         }
 
 
@@ -291,12 +383,14 @@ class Latest_Customer_List(View):
 
     def get(self, request, *args, **kwargs):
         filter_data = {}
-        query = request.GET.get("q")
         
+        query = request.GET.get("q")
         route_filter = request.GET.get('route_name')
+        customer_type_filter = request.GET.get('customer_type')
 
         ten_days_ago = datetime.now() - timedelta(days=10)
         user_li = Customers.objects.filter(created_date__gte=ten_days_ago)
+        
         if request.GET.get('start_date'):
             start_date = request.GET.get('start_date')
         else:
@@ -313,7 +407,11 @@ class Latest_Customer_List(View):
         filter_data["start_date"] = start_date.strftime('%Y-%m-%d') if start_date else None
         filter_data["end_date"] = end_date.strftime('%Y-%m-%d') if end_date else None
         
-        user_li = Customers.objects.filter(Q(created_date__date__range=[start_date, end_date]))
+        user_li = user_li.filter(Q(created_date__date__range=[start_date, end_date]))
+        
+        if customer_type_filter:
+            user_li = user_li.filter(sales_type=customer_type_filter)
+            filter_data['customer_type'] = customer_type_filter
 
         if route_filter:
             user_li = user_li.filter(routes__route_name=route_filter)
@@ -330,6 +428,11 @@ class Latest_Customer_List(View):
 
         route_li = RouteMaster.objects.all()
         
+        log_activity(
+            created_by=request.user,  
+            description=f"Viewed latest customer list with filters: {filter_data}"
+        )
+        
         context = {
             'user_li': user_li.order_by("-created_date"),
             'route_li': route_li,
@@ -343,30 +446,118 @@ class Inactive_Customer_List(View):
     template_name = 'accounts/inactive_customer_list.html'
 
     def get(self, request, *args, **kwargs):
+        # Get filter data from request
+        days_filter = request.GET.get('days_filter')
+        from_date = request.GET.get('from_date')
+        to_date = request.GET.get('to_date')
+        route_name = request.GET.get('route_name')
         query = request.GET.get("q")
-        route_filter = request.GET.get('route_name')
+        filter_data = {}
+        inactive_customers = []
 
-        user_li = Customers.objects.all()
+        # Initialize default date values
+        today = timezone.now().date()  # Use timezone.now() instead of datetime.today()
+       
 
-        if route_filter:
-            user_li = user_li.filter(routes__route_name=route_filter)
+        # Handle date filtering
+        if days_filter and days_filter != 'custom':
+            # Calculate the date range based on the selected number of days
+            to_date = datetime.today().date()
+            from_date = to_date - timedelta(days=int(days_filter))
+            print("from_date",from_date)
+            filter_data['days_filter'] = days_filter
+            filter_data['from_date'] = from_date.strftime('%Y-%m-%d')
+            filter_data['to_date'] = to_date.strftime('%Y-%m-%d')
+        else:
+            # Handle custom date range
+            if from_date:
+                from_date = datetime.strptime(from_date, '%Y-%m-%d').date()
+                filter_data['from_date'] = from_date.strftime('%Y-%m-%d')
+            else:
+                from_date = datetime.today().date()
+                filter_data['from_date'] = from_date.strftime('%Y-%m-%d')
+
+            if to_date:
+                to_date = datetime.strptime(to_date, '%Y-%m-%d').date()
+                filter_data['to_date'] = to_date.strftime('%Y-%m-%d')
+            else:
+                to_date = datetime.today().date()
+                filter_data['to_date'] = to_date.strftime('%Y-%m-%d')
+
+            filter_data['days_filter'] = 'custom'
+
+        if route_name:
+            van_route = Van_Routes.objects.filter(routes__route_name=route_name).first()
+            if van_route:
+                salesman_id = van_route.van.salesman.pk
+                filter_data['route_name'] = route_name
+
+                # Get customers who have made purchases within the date range
+                visited_customers = CustomerSupply.objects.filter(
+                    salesman_id=salesman_id,
+                    created_date__date__range=(from_date, to_date)
+                ).values_list('customer_id', flat=True)
+
+                # Get all customers assigned to the route
+                route_customers = Customers.objects.filter(routes=van_route.routes)
+
+                # Filter out the visited customers
+                inactive_customers = route_customers.exclude(pk__in=visited_customers)
+
+                # Get today's planned customers
+                todays_customers = find_customers(request, str(datetime.today().date()), van_route.routes.pk)
+                todays_customers = todays_customers if todays_customers else []
+                todays_customer_ids = [customer['customer_id'] for customer in todays_customers]
+
+                # Filter out today's planned customers from inactive customers
+                inactive_customers = inactive_customers.exclude(pk__in=todays_customer_ids)
 
         if query and query != "None":
-            user_li = user_li.filter(
-                Q(custom_id__icontains=query) |
-                Q(customer_name__icontains=query) |
-                Q(mobile_no__icontains=query) |
-                Q(routes__route_name__icontains=query) |
-                Q(location__location_name__icontains=query) |
-                Q(building_name__icontains=query)
+            query = query.lower()
+            inactive_customers = inactive_customers.filter(
+                custom_id__icontains=query
+            ) | inactive_customers.filter(
+                customer_name__icontains=query
+            ) | inactive_customers.filter(
+                building_name__icontains=query
             )
+            filter_data['q'] = query
+            
+        
+        # Calculate days since last supply and vacation status for each customer
+        def days_since_last_supply(customer_id):
+            try:
+                last_supply = CustomerSupply.objects.filter(customer_id=customer_id).order_by('-created_date').first()
+                if last_supply:
+                    last_supply_date = last_supply.created_date.date()
+                    days_since_last_supply = (today - last_supply_date).days
+                    return days_since_last_supply
+                else:
+                    return 0
+            except CustomerSupply.DoesNotExist:
+                return 0
 
-        route_li = RouteMaster.objects.all()
+        def is_on_vacation(customer_id):
+            try:
+                vacation = Vacation.objects.filter(customer_id=customer_id, start_date__lte=today, end_date__gte=today).first()
+                return vacation is not None
+            except Vacation.DoesNotExist:
+                return False
 
+        # Annotate each customer with the number of days since last supply and vacation status
+        for customer in inactive_customers:
+            customer.days_since_last_supply = days_since_last_supply(customer.pk)
+            customer.on_vacation = is_on_vacation(customer.pk)
+
+        log_activity(
+            created_by=request.user,  
+            description=f"Viewed inactive customer list with filters: {filter_data}"
+        )
         context = {
-            'user_li': user_li.order_by("-created_date"),
-            'route_li': route_li,
-            'route_filter': route_filter,
+            'inactive_customers': inactive_customers,
+            'routes_instances': RouteMaster.objects.all(),
+            'filter_data': filter_data,
+            'data_filter': bool(route_name),
             'q': query,
         }
 
@@ -378,6 +569,10 @@ class CustomerComplaintView(View):
     def get(self, request, pk, *args, **kwargs):
         customer = get_object_or_404(Customers, customer_id=pk)
         complaints = CustomerComplaint.objects.filter(customer=customer)
+        log_activity(
+            created_by=request.user,  
+            description=f"Viewed complaints for customer {customer.customer_id}"
+        )
         return render(request, self.template_name, {'customer': customer, 'complaints': complaints})
 
     def post(self, request, pk, *args, **kwargs):
@@ -388,6 +583,10 @@ class CustomerComplaintView(View):
         if status == "Completed":
             complaint.status = status
             complaint.save()
+            log_activity(
+                created_by=request.user,  
+                description=f"Updated complaint {complaint_id} status to {status} for customer {customer.customer_id}"
+            )
         return redirect('customer_complaint', pk=pk)
 
 
@@ -411,6 +610,12 @@ def create_customer(request):
             data.custom_id = get_custom_id(Customers)
             data.save()
             Staff_Day_of_Visit.objects.create(customer = data)
+            
+            log_activity(
+                created_by=request.user,
+                description=f"Created customer {data.custom_id} - {data.customer_name}"
+            )
+            
             messages.success(request, 'Customer Created successfully!')
             return redirect('customers')
         else:
@@ -423,6 +628,10 @@ def create_customer(request):
 def load_locations(request):
     emirate_id = request.GET.get('emirate_id')
     locations = LocationMaster.objects.filter(emirate__pk=emirate_id).all()
+    log_activity(
+            created_by=request.user if request.user.is_authenticated else None,
+            description=f"Loaded locations for emirate_id {emirate_id}"
+        )
     return JsonResponse(list(locations.values('location_id', 'location_name')), safe=False)
 
 # class Customer_Details(View):
@@ -440,6 +649,10 @@ class Customer_Details(View):
         user_det = Customers.objects.get(customer_id=pk)
         visit_schedule = self.format_visit_schedule(user_det.visit_schedule)
         context = {'user_det': user_det, 'visit_schedule': visit_schedule}
+        log_activity(
+            created_by=request.user if request.user.is_authenticated else None,
+            description=f"Viewed details for customer {user_det.customer_name}"
+        )
         return render(request, self.template_name, context)
 
     def format_visit_schedule(self, visit_schedule):
@@ -492,6 +705,10 @@ def edit_customer(request,pk):
                     created_by=request.user
                     )
                 messages.success(request, 'Customer Details Updated successfully!')
+                log_activity(
+                    created_by=request.user,
+                    description=f"Updated details for customer {cust_Data.customer_name}"
+                )
                 return redirect('customers')
             else:
                 messages.success(request, 'Invalid form data. Please check the input.')
@@ -506,6 +723,10 @@ def delete_customer(request,pk):
     cust_Data = Customers.objects.get(customer_id = pk)
     cust_Data.delete()
     
+    log_activity(
+            created_by=request.user if request.user.is_authenticated else None,
+            description=f"Deleted customer with ID {cust_Data.customer_name}"
+        )
     response_data = {
         "status": "true",
         "title": "Successfully Deleted",
@@ -594,7 +815,7 @@ def customer_list_excel(request):
         table_border_format = workbook.add_format({'border':1})
         worksheet.conditional_format(4, 0, len(df.index)+4, len(df.columns) - 1, {'type':'cell', 'criteria': '>', 'value':0, 'format':table_border_format})
         merge_format = workbook.add_format({'align': 'center', 'bold': True, 'font_size': 16, 'border': 1})
-        worksheet.merge_range('A1:K2', f'Al Wafa Water', merge_format)
+        worksheet.merge_range('A1:K2', f'Sana Water', merge_format)
         merge_format = workbook.add_format({'align': 'center', 'bold': True, 'border': 1})
         worksheet.merge_range('A3:K3', f'    Customer List   ', merge_format)
         # worksheet.merge_range('E3:H3', f'Date: {def_date}', merge_format)
@@ -605,6 +826,12 @@ def customer_list_excel(request):
     filename = f"Customer List.xlsx"
     response = HttpResponse(buffer.getvalue(), content_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
     response['Content-Disposition'] = f'inline; filename = "{filename}"'
+    
+    log_activity(
+        created_by=request.user,
+        description="Generated and downloaded customer list Excel report"
+    )
+    
     return response
 
 # def visit_days_assign(request,customer_id):
@@ -724,6 +951,10 @@ def visit_days_assign(request, customer_id):
         customer_data.visit_schedule = visit_schedule_data
         customer_data.save()
 
+        created_by = request.user.username  
+        description = f"Updated visit schedule for customer {customer_id}"
+        log_activity(created_by, description)
+        
         messages.success(request, 'Visit schedule updated successfully!')
         return redirect('customers')
     
@@ -750,6 +981,10 @@ class CustomerRateHistoryListView(View):
             histories = CustomerRateHistory.objects.filter(customer__routes__route_name=selected_route).order_by('-created_date')
         else:
             histories = CustomerRateHistory.objects.all().order_by('-created_date')
+        
+        created_by = request.user.username
+        description = f"Viewed customer rate histories with route filter: {selected_route if selected_route else 'All'}"
+        log_activity(created_by, description)
         
         context = {
             'histories': histories,
@@ -813,7 +1048,10 @@ class NonVisitedCustomersView(View):
                 query_str in str(customer.get('building_name', '')).lower()
             )]
             filter_data['q'] = query
-       
+            
+        log_activity(created_by= request.user.username, description= (f"Viewed non-visited customers with date: {filter_data['filter_date']} "
+                       f"and route: {filter_data.get('route_name', 'All')}."))
+        
         context = {
             'non_visited': non_visited,
             'routes_instances': RouteMaster.objects.all(),
@@ -822,4 +1060,270 @@ class NonVisitedCustomersView(View):
             'q': query,
         }
 
-        return render(request, self.template_name, context)    
+        return render(request, self.template_name, context)   
+    
+ 
+def change_password(request, user_id):
+    user = get_object_or_404(CustomUser, pk=user_id)
+    
+    if request.method == 'POST':
+        form = CustomPasswordChangeForm(user=user, data=request.POST)
+        if form.is_valid():
+            form.save()
+            update_session_auth_hash(request, user)  
+            log_activity(
+                created_by=request.user.username, 
+                description=f"Password changed for user: {user.username}"
+            )
+            return redirect('password_change_done')
+        else:
+            log_activity(
+                created_by=request.user.username, 
+                description=f"Failed password change attempt for user: {user.username}. Errors: {form.errors}"
+            )
+    else:
+        form = CustomPasswordChangeForm(user=user)
+
+    return render(request, 'accounts/change_password.html', {'form': form})
+
+
+class MissingCustomersView(View):
+    template_name = 'accounts/missing_customers.html'
+
+    def get(self, request, *args, **kwargs):
+        date = datetime.now().date()  # Or pass this as an argument if needed
+
+        routes = RouteMaster.objects.all()  # Get all RouteMaster instances
+        route_data = []
+
+        for route in routes:
+            route_id = route.route_id  # Use route_id from RouteMaster
+            actual_visitors = Customers.objects.filter(routes__pk=route_id, is_active=True).count()
+
+            planned_visitors_list = find_customers(request, str(date), route_id)  # Ensure this returns a list
+            planned_visitors = len(planned_visitors_list) if planned_visitors_list else 0
+
+            supplied_customers = CustomerSupply.objects.filter(
+                customer__routes__pk=route_id,
+                created_date__date=date
+            ).count()
+
+            if isinstance(planned_visitors_list, list):
+                todays_customers_dict = planned_visitors_list
+            else:
+                todays_customers_dict = []
+
+            visited_customers_ids = set(
+                CustomerSupply.objects.filter(
+                    customer__routes__pk=route_id,
+                    created_date__date=date
+                ).values_list('customer_id', flat=True)
+            )
+
+            # Filter out visited customers
+            missed_customers = [
+                customer for customer in todays_customers_dict 
+                if customer['customer_id'] not in visited_customers_ids
+            ]
+
+            missed_customers_count = len(missed_customers)
+            print("missed_customers_count", missed_customers_count)
+
+            route_data.append({
+                'route_name': route.route_name,  
+                'actual_visitors': actual_visitors,
+                'planned_visitors': planned_visitors,
+                'missed_customers': missed_customers_count,
+                'supplied_customers': supplied_customers,
+                'route_id': route.route_id  
+            })
+
+        log_activity(
+                created_by=request.user.username, 
+                description=f"Processed route: {route.route_name}. Missed customers count: {missed_customers_count}"
+            )
+        
+        context = {
+            'route_data': route_data
+        }
+
+        return render(request, self.template_name, context)
+
+class MissingCustomersPdfView(View):
+    template_name = 'accounts/missing_customers_pdf.html'
+
+    def get(self, request, *args, **kwargs):
+        date = datetime.now().date()  
+
+        routes = RouteMaster.objects.all()  
+        route_data = []
+
+        for route in routes:
+            route_id = route.route_id
+            actual_visitors = Customers.objects.filter(routes__pk=route_id, is_active=True).count()
+
+            planned_visitors_list = find_customers(request, str(date), route_id)  # Ensure this returns a list
+            planned_visitors = len(planned_visitors_list) if planned_visitors_list else 0
+
+            supplied_customers = CustomerSupply.objects.filter(
+                customer__routes__pk=route_id,
+                created_date__date=date
+            ).count()
+
+            if isinstance(planned_visitors_list, list):
+                todays_customers_dict = planned_visitors_list
+            else:
+                todays_customers_dict = []
+
+            visited_customers_ids = set(
+                CustomerSupply.objects.filter(
+                    customer__routes__pk=route_id,
+                    created_date__date=date
+                ).values_list('customer_id', flat=True)
+            )
+
+            missed_customers = [
+                customer for customer in todays_customers_dict
+                if customer['customer_id'] not in visited_customers_ids
+            ]
+
+            missed_customers_count = len(missed_customers)
+
+            route_data.append({
+                'route_name': route.route_name,
+                'actual_visitors': actual_visitors,
+                'planned_visitors': planned_visitors,
+                'missed_customers': missed_customers_count,
+                'supplied_customers': supplied_customers,
+                'route_id': route.route_id
+            })
+
+        log_activity(
+                created_by=request.user.username,
+                description=f"Processed route: {route.route_name}. Missed customers count: {missed_customers_count}"
+            )
+        
+        context = {
+            'route_data': route_data
+        }
+        return render(request, self.template_name, context)
+
+
+        
+class MissedOnDeliveryView(View):
+    template_name = 'accounts/missed_on_delivery.html'
+
+    def get(self, request, route_id, *args, **kwargs):
+        date = timezone.now().date()
+        van_route = get_object_or_404(Van_Routes, routes__route_id=route_id)
+        print("van_route",van_route)
+        planned_customers = find_customers(request, str(date), route_id)
+
+        supplied_customers_ids = CustomerSupply.objects.filter(
+            customer__routes__route_id=route_id,
+            created_date__date=date
+        ).values_list('customer_id', flat=True)
+
+        missed_customers = []
+        for customer in planned_customers:
+            if customer['customer_id'] not in supplied_customers_ids:
+                last_supply = CustomerSupply.objects.filter(
+                    customer_id=customer['customer_id']
+                ).order_by('-created_date').last()
+
+                last_sold_date = last_supply.created_date if last_supply else None
+
+                # Get the reason for non-visit if exists
+                non_visit_report = NonvisitReport.objects.filter(
+                    customer_id=customer['customer_id'],
+                    supply_date=date
+                ).last()
+
+                reason_for_non_visit = non_visit_report.reason if non_visit_report else None
+
+                customer['last_sold_date'] = last_sold_date
+                customer['reason_for_non_visit'] = reason_for_non_visit
+                missed_customers.append(customer)
+
+        log_activity(
+                    created_by=request.user.username,
+                    description=f"Missed customer ID: {customer['customer_id']} for route ID: {route_id} on date: {date}. Last sold date: {last_sold_date}, Reason: {reason_for_non_visit}"
+                )
+        
+        context = {
+            'missed_customers': missed_customers,
+            'route_id': route_id
+        }
+
+        return render(request, self.template_name, context)
+
+
+class MissedOnDeliveryPrintView(View):
+    
+    template_name = 'accounts/missed_on_delivery_print.html'
+
+    
+    def get(self, request, route_id, *args, **kwargs):
+        date = timezone.now().date()
+        van_route = get_object_or_404(Van_Routes, routes__route_id=route_id)
+
+        planned_customers = find_customers(request, str(date), route_id)
+
+        supplied_customers_ids = CustomerSupply.objects.filter(
+            customer__routes__route_id=route_id,
+            created_date__date=date
+        ).values_list('customer_id', flat=True)
+
+        missed_customers = []
+        for customer in planned_customers:
+            if customer['customer_id'] not in supplied_customers_ids:
+                last_supply = CustomerSupply.objects.filter(
+                    customer_id=customer['customer_id']
+                ).order_by('-created_date').last()
+
+                last_sold_date = last_supply.created_date if last_supply else None
+
+                # Get the reason for non-visit if exists
+                non_visit_report = NonvisitReport.objects.filter(
+                    customer_id=customer['customer_id'],
+                    supply_date=date
+                ).last()
+
+                reason_for_non_visit = non_visit_report.reason if non_visit_report else None
+
+                customer['last_sold_date'] = last_sold_date
+                customer['reason_for_non_visit'] = reason_for_non_visit
+                missed_customers.append(customer)
+
+            log_activity(
+                    created_by=request.user.username,
+                    description=f"Missed customers print successfully "
+                )
+            
+        context = {
+            'missed_customers': missed_customers,
+            'route_id':route_id,
+        }
+
+        return render(request, self.template_name, context)
+
+
+def log_activity(created_by, description, created_date=None):
+    
+    if created_date is None:
+        created_date = timezone.now()
+
+    Processing_Log.objects.create(
+        created_by=created_by,
+        description=description,
+        created_date=created_date
+    )
+
+def processing_log_list(request):
+    logs = Processing_Log.objects.all().order_by("-created_date")
+    
+    context = {
+        'logs': logs,
+    }
+    
+    return render(request, 'accounts/processing_log_list.html', context)

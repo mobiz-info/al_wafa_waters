@@ -99,10 +99,10 @@ class Customers(models.Model):
     )
     customer_type = models.CharField(max_length=100, choices=CUSTOMER_TYPE_CHOICES, null=True, blank=True)
     sales_type = models.CharField(max_length=100, choices=SALES_TYPE_CHOICES, null=True, blank=True)
-    no_of_bottles_required = models.IntegerField(null=True,blank=True)
-    max_credit_limit = models.IntegerField(null=True,blank=True)
-    credit_days = models.IntegerField(null=True,blank=True)
-    no_of_permitted_invoices = models.IntegerField(null=True,blank=True)
+    no_of_bottles_required = models.IntegerField(default=0)
+    max_credit_limit = models.IntegerField(default=0)
+    credit_days = models.IntegerField(default=0)
+    no_of_permitted_invoices = models.IntegerField(default=0)
     trn = models.CharField(max_length=100, null=True, blank=True)
     billing_address = models.CharField(max_length=100, null=True, blank=True)
     preferred_time = models.CharField(max_length=100, null=True, blank=True)
@@ -113,6 +113,7 @@ class Customers(models.Model):
     user_id = models.ForeignKey('accounts.CustomUser', on_delete=models.SET_NULL, null=True, blank=True,related_name='user_sign')
     rate = models.CharField(max_length=100, null=True, blank=True)
     coupon_count = models.PositiveIntegerField(default=0)
+    is_calling_customer = models.BooleanField(default=False)
     
     def __str__(self):
         return str(self.customer_name)
@@ -241,3 +242,14 @@ class TermsAndConditions(models.Model):
     def __str__(self):
         return f"Terms and Conditions - {self.created_date}"
 
+class Processing_Log(models.Model):
+    created_by = models.CharField(max_length=20,  blank=True)
+    created_date = models.DateTimeField(auto_now_add=True,blank=True, null=True)
+   
+    description = models.CharField(null=True,max_length=1024)
+    
+    class Meta:
+        ordering = ('-created_date',)
+
+    def __str__(self):
+        return f"Processing Log - {self.created_date}"

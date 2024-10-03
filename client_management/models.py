@@ -4,7 +4,7 @@ from django.db.models.signals import post_save
 from django.dispatch import receiver
 from datetime import date
 from accounts.models import *
-from coupon_management.models import COUPON_METHOD_CHOICES, Coupon, CouponLeaflet, CouponType, NewCoupon
+from coupon_management.models import COUPON_METHOD_CHOICES, Coupon, CouponLeaflet, CouponType, FreeLeaflet, NewCoupon
 from product.models import *
 from django.http import HttpResponse
 from django.db.models import Count,Sum
@@ -122,7 +122,7 @@ class CustomerReturnReason(models.Model):
 class CustomerReturn(models.Model):
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     customer = models.ForeignKey(Customers, on_delete=models.CASCADE,null=True,blank=True)
-    agreement_no = models.CharField(max_length=50, null=True, blank=True)
+    agreement_no = models.CharField(max_length=500, null=True, blank=True)
     reference_no = models.CharField(max_length=100, null=True, blank=True)
     deposit_type = models.CharField(max_length=20,choices=DEPOSIT_TYPES,null=True,blank=True)
     created_by = models.CharField(max_length=20,  blank=True)
@@ -139,7 +139,7 @@ class CustomerReturnItems(models.Model):
     customer_return = models.ForeignKey(CustomerReturn, on_delete=models.CASCADE,null=True,blank=True)
     product = models.ForeignKey('product.ProdutItemMaster', on_delete=models.CASCADE,null=True,blank=True)
     quantity = models.IntegerField(blank=True,null=True)
-    serialnumber = models.CharField(max_length=20, null=True, blank=True)
+    serialnumber = models.CharField(max_length=520, null=True, blank=True)
     amount = models.IntegerField(blank=True,null=True)
 
     def _str_(self):
@@ -148,12 +148,12 @@ class CustomerReturnItems(models.Model):
 class CustomerReturnStock(models.Model):
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     customer = models.ForeignKey('accounts.Customers', on_delete=models.CASCADE,null=True,blank=True)
-    agreement_no = models.CharField(max_length=50, null=True, blank=True)
+    agreement_no = models.CharField(max_length=500, null=True, blank=True)
     deposit_type = models.CharField(max_length=20,choices=DEPOSIT_TYPES,null=True,blank=True)
     reference_no = models.CharField(max_length=100)
     product = models.ForeignKey('product.ProdutItemMaster', on_delete=models.CASCADE,null=True,blank=True)
     quantity = models.IntegerField(blank=True,null=True)
-    serialnumber = models.CharField(max_length=20, null=True, blank=True)
+    serialnumber = models.CharField(max_length=500, null=True, blank=True)
     amount = models.DecimalField(default=0, decimal_places=2, max_digits=10)
     class Meta:
         ordering = ('id',)
@@ -263,12 +263,32 @@ class CustomerCouponItems(models.Model):
     def __str__(self):
         return str(self.customer_coupon.customer)
     
+    # Function to get count of used coupon leaflets
+    def get_used_leaflets(self):
+        """Returns the count of used coupon leaflets for this sale."""
+        return CouponLeaflet.objects.filter(coupon=self.coupon, used=True).count()
+
+    # Function to get count of unused coupon leaflets
+    def get_unused_leaflets(self):
+        """Returns the count of unused coupon leaflets for this sale."""
+        return CouponLeaflet.objects.filter(coupon=self.coupon, used=False).count()
+
+    
     def get_available_coupon_count(self):
         return CouponLeaflet.objects.filter(coupon=self.coupon,used=False).count()
     
     def customer_leafs(self):
         leafs = CouponLeaflet.objects.filter(coupon=self.coupon,used=False)
         return leafs
+    
+    def get_per_leaf_rate(self):
+        try:
+            valuable_leaflets = int(self.coupon.valuable_leaflets)  # Ensure this field exists in NewCoupon
+            if valuable_leaflets > 0:
+                return self.rate / valuable_leaflets
+        except (ValueError, ZeroDivisionError):
+            return None
+        return None
     
 class CustomerCouponStock(models.Model):
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
@@ -282,6 +302,39 @@ class CustomerCouponStock(models.Model):
         
     def __str__(self):
         return str(self.customer.customer_name)
+    
+        # Function to get the total sold coupon books count by type (manual and digital)
+    @classmethod
+    def get_sold_coupons_by_type(cls):
+        # Get sold coupons grouped by coupon_type and coupon_method
+        sold_coupons = NewCoupon.objects.filter(status=True).values('coupon_type__coupon_type_name', 'coupon_method').annotate(sold_count=Count('coupon_id'))
+        
+        result = {}
+        total_manual = 0
+        total_digital = 0
+        
+        for coupon in sold_coupons:
+            coupon_type_name = coupon['coupon_type__coupon_type_name']
+            coupon_method = coupon['coupon_method']
+            sold_count = coupon['sold_count']
+            
+            # Initialize dictionary for each coupon type
+            if coupon_type_name not in result:
+                result[coupon_type_name] = {'digital': 0, 'manual': 0}
+            
+            # Increment the count based on the coupon method
+            result[coupon_type_name][coupon_method] += sold_count
+            
+            # Update the totals
+            if coupon_method == 'manual':
+                total_manual += sold_count
+            elif coupon_method == 'digital':
+                total_digital += sold_count
+        
+        # Add total manual and digital coupons sold across all coupon types
+        result['total'] = {'manual': total_manual, 'digital': total_digital}
+
+        return result
     
 class ChequeCouponPayment(models.Model):
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
@@ -317,11 +370,11 @@ class CustomerOutstanding(models.Model):
     
     def get_outstanding_count(self):
         if self.product_type == 'amount':
-            return OutstandingAmount.objects.get(customer_outstanding=self).amount
+            return OutstandingAmount.objects.filter(customer_outstanding=self).aggregate(total_amount=Sum('amount'))['total_amount'] or 0
         if self.product_type == 'coupons':
             return OutstandingCoupon.objects.filter(customer_outstanding=self).aggregate(total_count=Sum('count'))['total_count'] or 0
         if self.product_type == 'emptycan':
-            return OutstandingProduct.objects.get(customer_outstanding=self).empty_bottle
+            return OutstandingProduct.objects.filter(customer_outstanding=self).aggregate(total_empty_bottle=Sum('empty_bottle'))['total_empty_bottle'] or 0
 
 class OutstandingAmount(models.Model):
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
@@ -427,6 +480,7 @@ class CustomerSupplyCoupon(models.Model):
         id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
         customer_supply = models.ForeignKey(CustomerSupply,on_delete = models.CASCADE)
         leaf = models.ManyToManyField(CouponLeaflet)
+        free_leaf = models.ManyToManyField(FreeLeaflet)
 
         class Meta:
             ordering = ('-id',)
@@ -483,31 +537,54 @@ class MarketShare(models.Model):
         def __str__(self):
             return str(self.product)
         
+        
 class CustomerOrders(models.Model):
-        id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
-        product = models.ForeignKey(ProdutItemMaster, on_delete=models.CASCADE)
-        customer = models.ForeignKey('accounts.Customers',on_delete = models.CASCADE)
-        quantity=models.DecimalField(default=0, max_digits=10, decimal_places=2)
-        total_amount = models.DecimalField(default=0, max_digits=10, decimal_places=2)
-        no_empty_bottle_return = models.PositiveIntegerField(default=0)
-        empty_bottle_required = models.BooleanField(default=False)
-        no_empty_bottle_required = models.PositiveIntegerField(default=0)
-        empty_bottle_amount = models.DecimalField(default=0, max_digits=10, decimal_places=2)
-        total_net_amount = models.DecimalField(default=0, max_digits=10, decimal_places=2)
-        delivery_date = models.DateField()
-        payment_option = models.CharField(max_length=10,choices=CUSTOMER_ORDER_PAYMENT_OPTION)
-        order_status = models.CharField(max_length=10,choices=CUSTOMER_ORDER_STATUS)
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    customer = models.ForeignKey(Customers, on_delete=models.CASCADE, null=True, blank=True)
+    delivery_date = models.DateField()
+    grand_total = models.DecimalField(default=0, max_digits=10, decimal_places=2)
+    order_status = models.CharField(max_length=10,choices=CUSTOMER_ORDER_STATUS)
+    
+    created_by = models.CharField(max_length=200)
+    created_date = models.DateTimeField(auto_now_add=True)
+    modified_by = models.CharField(max_length=200, null=True, blank=True)
+    modified_date = models.DateTimeField(blank=True, null=True)
+
+    def __str__(self):
+        return f"{self.customer}"
+    
+class CustomerOrdersItems(models.Model):
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    customer_order = models.ForeignKey(CustomerOrders, on_delete=models.CASCADE)
+    product = models.ForeignKey(ProdutItemMaster, on_delete=models.CASCADE,null=True,blank=True)
+    quantity = models.DecimalField(default=1, max_digits=10, decimal_places=0)
+    price = models.DecimalField(default=0, max_digits=10, decimal_places=2)
+    total_amount = models.DecimalField(default=0, max_digits=10, decimal_places=2)
+    
+    def __str__(self):
+        return f"{self.product} - Quantity: {self.quantity}"
         
-        created_by = models.CharField(max_length=100, blank=True)
-        created_date = models.DateTimeField(auto_now_add=True)
-        modified_by = models.CharField(max_length=20, null=True, blank=True)
-        modified_date = models.DateTimeField(auto_now=True ,blank=True, null=True)
+# class CustomerOrders(models.Model):
+#         id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+#         product = models.ForeignKey(ProdutItemMaster, on_delete=models.CASCADE)
+#         customer = models.ForeignKey('accounts.Customers',on_delete = models.CASCADE)
+#         quantity = models.DecimalField(default=0, max_digits=10, decimal_places=2)
+#         amount = models.DecimalField(default=0, max_digits=10, decimal_places=2)
+#         gand_total = models.DecimalField(default=0, max_digits=10, decimal_places=2)
+#         delivery_date = models.DateField()
+#         payment_option = models.CharField(max_length=10,choices=CUSTOMER_ORDER_PAYMENT_OPTION)
+#         order_status = models.CharField(max_length=10,choices=CUSTOMER_ORDER_STATUS)
         
-        class Meta:
-            ordering = ('-created_date',)
+#         created_by = models.CharField(max_length=100, blank=True)
+#         created_date = models.DateTimeField(auto_now_add=True)
+#         modified_by = models.CharField(max_length=20, null=True, blank=True)
+#         modified_date = models.DateTimeField(auto_now=True ,blank=True, null=True)
+        
+#         class Meta:
+#             ordering = ('-created_date',)
             
-        def __str__(self):
-            return str(self.product)
+#         def __str__(self):
+#             return str(self.product)
 
 
 
@@ -535,3 +612,51 @@ class NonvisitReport(models.Model):
 
     def __str__(self):
         return f'{self.customer} - {self.salesman} - {self.reason}'
+    
+class CustomerCart(models.Model):
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    customer = models.ForeignKey(Customers, on_delete=models.CASCADE, null=True, blank=True)
+    delivery_date = models.DateField()
+    grand_total = models.DecimalField(default=0, max_digits=10, decimal_places=2)
+    order_status = models.BooleanField(default=False)
+    
+    created_by = models.CharField(max_length=200)
+    created_date = models.DateTimeField(auto_now_add=True)
+    modified_by = models.CharField(max_length=200, null=True, blank=True)
+    modified_date = models.DateTimeField(blank=True, null=True)
+
+    def __str__(self):
+        return f"{self.customer}"
+    
+class CustomerCartItems(models.Model):
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    customer_cart = models.ForeignKey(CustomerCart, on_delete=models.CASCADE)
+    product = models.ForeignKey(ProdutItemMaster, on_delete=models.CASCADE,null=True,blank=True)
+    quantity = models.DecimalField(default=1, max_digits=10, decimal_places=0)
+    price = models.DecimalField(default=0, max_digits=10, decimal_places=2)
+    total_amount = models.DecimalField(default=0, max_digits=10, decimal_places=2)
+    
+    def __str__(self):
+        return f"{self.product} - Quantity: {self.quantity}"
+    
+
+class DialyCustomers(models.Model):
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    date = models.DateField()
+    customer = models.ForeignKey(Customers, on_delete=models.CASCADE)
+    route = models.ForeignKey('master.RouteMaster', on_delete=models.CASCADE)
+    qty = models.DecimalField(default=0, max_digits=10, decimal_places=2)
+    is_emergency = models.BooleanField(default=False)
+    is_supply = models.BooleanField(default=False)
+    
+    def __str__(self):
+        return f"{self.customer.customer_name} - Quantity: {self.qty}"
+    
+
+class InactiveCustomers(models.Model):
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    customer = models.ForeignKey(Customers, on_delete=models.CASCADE)
+    inactive_days = models.IntegerField(default=0)
+    
+    def __str__(self):
+        return f"{self.customer.customer_name} - In Active Days: {self.inactive_days}"

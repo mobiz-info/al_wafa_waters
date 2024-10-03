@@ -8,6 +8,7 @@ class CustomerCouponStockAdmin(admin.ModelAdmin):
 admin.site.register(CustomerCouponStock,CustomerCouponStockAdmin)
 
 admin.site.register(CustomerCoupon)
+admin.site.register(CustomerCouponItems)
 admin.site.register(ChequeCouponPayment)
 
 class CustomerOutstandingAdmin(admin.ModelAdmin):
@@ -61,3 +62,15 @@ admin.site.register(CustomerSupply,CustomerSupplyAdmin)
 
 admin.site.register(CustomerSupplyItems)
 admin.site.register(CustomerSupplyStock)
+admin.site.register(CustomerCart)
+
+class DialyCustomersAdmin(admin.ModelAdmin):
+    list_display = ('id','date','customer','route','qty','is_emergency','is_supply')
+    ordering = ("-date",)
+    
+    def customer(self, obj):
+        return obj.customer.customer_name
+    
+    def route(self, obj):
+        return obj.route.route_name
+admin.site.register(DialyCustomers,DialyCustomersAdmin)

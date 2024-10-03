@@ -32,7 +32,18 @@
                     </div>
                     
                     <div class="card-body" style="overflow: auto;">
-                        <table class="table table-bordered text-nowrap" style="width:100%">
+                        <div style="float:right;padding:10px 0px;">
+                            <form method="GET">
+                                <div class="input-group">
+                                    
+                                    {% comment %} <input type="date" name="from_date" class="form-control datetimepicker" value="{{ filter_data.from_date }}">
+                                    <input type="date" name="to_date" class="form-control datetimepicker" value="{{ filter_data.to_date }}"> {% endcomment %}
+                                    <input type="text" name="q" class="form-control" placeholder="Search ..." value="{{ filter_data.q }}">
+                                    <button type="submit" class="btn btn-primary"><i class="bi bi-search"></i>Search</button>
+                                </div>
+                            </form>
+                        </div>
+                        <table  class="table table-bordered text-nowrap" style="width:100%">
                             <thead>
                                 <tr>
                                 <th scope="col" class="text-center">Sl.No</th>
@@ -43,7 +54,7 @@
                                 <th scope="col" class="text-center">Net Taxeble</th>
                                 <th scope="col" class="text-center">VAT</th>
                                 <th scope="col" class="text-center">Total Amount</th>
-                                <th scope="col" class="text-center">Amount Recieved</th>
+                                <th scope="col" class="text-center">Amount<br> Recieved</th>
                                 <th scope="col" class="text-right">Actions</th>
                             </tr>
                             </thead>
@@ -53,9 +64,9 @@
                                 {% for instance in instances %}
                                 <tr>
                                     <td class="text-center">{{forloop.counter}}</td>
-                                    <td class="text-left">{{instance.created_date}}</td>
+                                    <td class="text-left">{{instance.created_date|date:'d/m/Y'}}</td>
                                     <td class="text-left">{{instance.invoice_no}}</td>
-                                    <td class="text-center">{{instance.customer.customer_name}}</td>
+                                    <td class="text-left">{{instance.customer.customer_name}}</td>
                                     <td class="text-center">{{instance.get_invoice_type_display}}</td>
                                     <td class="text-center">{{instance.net_taxable}}</td>
                                     <td class="text-center">{{instance.vat}}%</td>

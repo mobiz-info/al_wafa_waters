@@ -51,9 +51,12 @@ urlpatterns = [
         path('new-coupon-count/<uuid:pk>/', new_coupon_count, name='new_coupon_count'),
         path('delete-coupon-count/<uuid:pk>/', delete_count, name='delete_count'),
         
-         #customer outstanding
+        #customer outstanding
         re_path(r'^customer-outstanding/$', customer_outstanding_list, name='customer_outstanding_list'),
+        path('print_customer_outstanding/', print_customer_outstanding, name='print_customer_outstanding'),
+        re_path(r'^edit_customer_outstanding/(?P<outstanding_pk>.*)/$', edit_customer_outstanding, name='edit_customer_outstanding'),
         re_path(r'outstanding_list/$', outstanding_list, name='outstanding_list'),
+        path('print-outstanding-report/', print_outstanding_report, name='print_outstanding_report'),
         re_path(r'^create-customer-outstanding/$', create_customer_outstanding, name='create_customer_outstanding'),
         re_path(r'^customer-outstanding-details/(?P<customer_pk>.*)/$', customer_outstanding_details, name='customer_outstanding_details'),
         re_path(r'^delete-customer-outstanding/(?P<pk>.*)/$', delete_outstanding, name='delete_outstanding'),
@@ -71,6 +74,6 @@ urlpatterns = [
         path('create_nonvisitreason', create_nonvisitreason, name="create_nonvisitreason"),
         path('delete_nonvisitreason/<uuid:id>/', delete_nonvisitreason, name='delete_nonvisitreason'),
 
-
+        path('upload-outstanding/', upload_outstanding, name='upload_outstanding'),
 
 ]
