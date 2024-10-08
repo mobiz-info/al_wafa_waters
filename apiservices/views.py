@@ -161,6 +161,37 @@ class StoreKeeperLoginApi(APIView):
         except Exception as e:
             return Response({'status': False, 'message': 'Something went wrong!'})
 
+class MarketingExecutiveLoginApi(APIView):
+    def post(self, request, *args, **kwargs):
+        try:
+            username = request.data.get('username')
+            password = request.data.get('password')
+            if username and password:
+                user = authenticate(username=username, password=password, user_type="marketing_executive")
+                if user is not None:
+                    if user.is_active:
+                        login(request, user)
+                        user_obj = CustomUser.objects.filter(username=username).first()
+                        token = generate_random_string(20)  # Adjust the token length as needed
+                        data = {
+                            'id': user_obj.id,
+                            'username': username,
+                            'user_type': user_obj.user_type,
+                            'token': token
+                        }
+                    else:
+                        return Response({'status': False, 'message': 'User Inactive!'})
+                    return Response({'status': True, 'data': data, 'message': 'Authenticated User!'})
+                else:
+                    return Response({'status': False, 'message': 'Unauthenticated User!'})
+            else:
+                return Response({'status': False, 'message': 'Unauthenticated User!'})
+        except CustomUser.DoesNotExist:
+            return Response({'status': False, 'message': 'User does not exist!'})
+        except Exception as e:
+            return Response({'status': False, 'message': 'Something went wrong!'})
+
+
 class RouteMaster_API(APIView):
     serializer_class = RouteMasterSerializers
     authentication_classes = [BasicAuthentication]
@@ -700,22 +731,17 @@ def find_customers(request, def_date, route_id):
     van_route = Van_Routes.objects.filter(routes=route).first()
     van_capacity = van_route.van.capacity if van_route else 200
     
+    vocation_customer_ids = Vacation.objects.filter(start_date__gte=date,end_date__lte=date).values_list('customer__pk')
+    
     todays_customers = []
     buildings = []
-    for customer in Customers.objects.filter(routes=route,is_calling_customer=False):
+    for customer in Customers.objects.filter(routes=route,is_calling_customer=False).exclude(pk__in=vocation_customer_ids):
         if customer.visit_schedule:
             for day, weeks in customer.visit_schedule.items():
                 if day in str(day_of_week) and week_number in str(weeks):
                     todays_customers.append(customer)
                     buildings.append(customer.building_name)
                         
-    # Customers on vacation
-    date = datetime.strptime(def_date, '%Y-%m-%d').date()
-    for vacation in Vacation.objects.all():
-        if vacation.start_date <= date <= vacation.end_date:
-            if vacation.customer in todays_customers:
-                todays_customers.remove(vacation.customer)
-   
     # Emergency customers
     special_customers = DiffBottlesModel.objects.filter(delivery_date=date)
     emergency_customers = []
@@ -2021,18 +2047,25 @@ class Staff_New_Order(APIView):
 
                 order_number = f"{new_order_number}"
                 order_date = request.GET.get('order_date')
-            
+                delivery_date = request.data.get('delivery_date')
+                
                 if order_date:
                     order_date = datetime.strptime(order_date, '%Y-%m-%d').date()
                 else:
                     order_date = datetime.today().date()
+                
+                if delivery_date:
+                    delivery_date = datetime.strptime(delivery_date, '%Y-%m-%d').date()
+                else:
+                    delivery_date = datetime.today().date()
 
                 serializer_1 = self.staff_order_serializer(data=request.data)
                 if serializer_1.is_valid(raise_exception=True):
                     order_data = serializer_1.save(
                         created_by=request.user.id,
                         order_number=order_number.upper(),
-                        order_date=order_date
+                        order_date=order_date,
+                        delivery_date=delivery_date
                     )
                     staff_order = order_data.staff_order_id
 
@@ -4604,19 +4637,37 @@ class DeleteCouponCount(APIView):
 class customer_outstanding(APIView):
     authentication_classes = [BasicAuthentication]
     permission_classes = [IsAuthenticated]
+
     def get(self, request, *args, **kwargs):
         customers = Customers.objects.filter(sales_staff=request.user)
         route_id = request.GET.get("route_id")
-        
-        if route_id :
+
+        if route_id:
             customers = customers.filter(routes__pk=route_id)
-            
-        serialized_data = CustomerOutstandingSerializer(customers, many=True)
-        
-        customer_outstanding = CustomerOutstandingReport.objects.filter(customer__in=customers)
-        total_amount = customer_outstanding.filter(product_type="amount").aggregate(total=Sum('value', output_field=DecimalField()))['total']
-        total_coupons = customer_outstanding.filter(product_type="coupons").aggregate(total=Sum('value', output_field=DecimalField()))['total']
-        total_emptycan = customer_outstanding.filter(product_type="emptycan").aggregate(total=Sum('value', output_field=DecimalField()))['total']
+
+        # Filter out customers whose outstanding amounts are all zero
+        customers_with_outstanding = []
+        for customer in customers:
+            amount = CustomerOutstandingReport.objects.filter(customer=customer, product_type="amount").aggregate(
+                total=Sum('value', output_field=DecimalField()))['total'] or 0
+            coupons = CustomerOutstandingReport.objects.filter(customer=customer, product_type="coupons").aggregate(
+                total=Sum('value', output_field=DecimalField()))['total'] or 0
+            empty_can = CustomerOutstandingReport.objects.filter(customer=customer, product_type="emptycan").aggregate(
+                total=Sum('value', output_field=DecimalField()))['total'] or 0
+
+            if amount != 0 or coupons != 0 or empty_can != 0:
+                customers_with_outstanding.append(customer)
+
+        serialized_data = CustomerOutstandingSerializer(customers_with_outstanding, many=True)
+
+        # Aggregate the total amounts for all customers
+        customer_outstanding = CustomerOutstandingReport.objects.filter(customer__in=customers_with_outstanding)
+        total_amount = customer_outstanding.filter(product_type="amount").aggregate(
+            total=Sum('value', output_field=DecimalField()))['total']
+        total_coupons = customer_outstanding.filter(product_type="coupons").aggregate(
+            total=Sum('value', output_field=DecimalField()))['total']
+        total_emptycan = customer_outstanding.filter(product_type="emptycan").aggregate(
+            total=Sum('value', output_field=DecimalField()))['total']
 
         return Response({
             'status': True,
@@ -4625,7 +4676,7 @@ class customer_outstanding(APIView):
             "total_coupons": total_coupons,
             "total_emptycan": total_emptycan,
             'message': 'success'
-        },)
+        })
 
 class CustomerCouponListAPI(APIView):
     authentication_classes = [BasicAuthentication]
@@ -5327,43 +5378,54 @@ class RedeemedHistoryAPI(APIView):
 class CouponConsumptionReport(APIView):
     authentication_classes = [BasicAuthentication]
     permission_classes = [IsAuthenticated]
-
     def get(self, request, *args, **kwargs):
-        start_date = request.GET.get('start_date')
-        end_date = request.GET.get('end_date')
-        
-        if start_date:
-            start_date = datetime.strptime(start_date, '%Y-%m-%d').date()
-            end_date = datetime.strptime(end_date, '%Y-%m-%d').date()
-        else:
-            start_date = date.today()
-            end_date = date.today()
+            start_date = request.data.get('start_date')  
+            print("start_date",start_date)
+            end_date = request.data.get('end_date')  
+            print("end_date",end_date)
+            
+            if start_date and end_date:
+                start_date = datetime.strptime(start_date, '%Y-%m-%d').date()
+                end_date = datetime.strptime(end_date, '%Y-%m-%d').date()
+            else:
+                start_date = date.today()
+                end_date = date.today()
 
-        filter_start_date = start_date.strftime('%Y-%m-%d')
-        filter_end_date = end_date.strftime('%Y-%m-%d')
-        
-        supply_instance = CustomerSupply.objects.filter(created_date__date__gte=start_date,created_date__date__lte=end_date,customer__sales_type="CASH COUPON")
-        
-        serializer = CouponConsumptionSerializer(supply_instance, many=True)
-        
-        total_digital_sum = CustomerSupplyDigitalCoupon.objects.filter(
-            customer_supply__created_date__date__gte=start_date,
-            customer_supply__created_date__date__lte=end_date
-        ).aggregate(total_count=Sum('count'))['total_count'] or 0  # Use Sum expression
+            supply_instance = CustomerSupply.objects.filter(
+                created_date__date__gte=start_date,
+                created_date__date__lte=end_date,
+                customer__sales_type="CASH COUPON"
+            )
+            
+            serializer = CouponConsumptionSerializer(supply_instance, many=True)
+            
+            # Initialize total sums
+            total_no_of_bottles_supplied = 0
+            total_collected_empty_bottle = 0
+            total_total_digital_leaflets = 0
+            total_total_manual_leaflets = 0
+            total_no_of_leaflet_collected = 0
+            total_pending_leaflet = 0
 
-        # Correct aggregation for manual leaflets
-        total_manual_sum = CustomerSupplyCoupon.objects.filter(
-            customer_supply__created_date__date__gte=start_date,
-            customer_supply__created_date__date__lte=end_date
-        ).aggregate(total_leaflets=Count('leaf'))['total_leaflets'] or 0
+            # Calculate total sums from serializer data
+            for supply in serializer.data:
+                total_no_of_bottles_supplied += supply.get('no_of_bottles_supplied', 0)
+                total_collected_empty_bottle += supply.get('collected_empty_bottle', 0)  
+                total_total_digital_leaflets += supply.get('total_digital_leaflets', 0)
+                total_total_manual_leaflets += supply.get('total_manual_leaflets', 0)
+                total_no_of_leaflet_collected += supply.get('no_of_leaflet_collected', 0)
+                total_pending_leaflet += supply.get('pending_leaflet', 0)
 
-        return Response({
-            'status': True,
-            'data': serializer.data,
-            'total_digital_sum': total_digital_sum,
-            'total_manual_sum': total_manual_sum,
-        }, status=status.HTTP_200_OK)
-    
+            return Response({
+                'status': True,
+                'data': serializer.data,               
+                'total_no_of_bottles_supplied': total_no_of_bottles_supplied,
+                'total_collected_empty_bottle': total_collected_empty_bottle,                  
+                'total_total_digital_leaflets': total_total_digital_leaflets,
+                'total_total_manual_leaflets': total_total_manual_leaflets,
+                'total_no_of_leaflet_collected': total_no_of_leaflet_collected,
+                'total_pending_leaflet': total_pending_leaflet,
+            }, status=status.HTTP_200_OK)
 
 from django.utils.timezone import make_aware
 from django.db.models import Sum, Count, Case, When, IntegerField
@@ -8719,8 +8781,11 @@ class addDamageBottleAPIView(APIView):
             with transaction.atomic():
                 if product_id:
                     product_item = ProdutItemMaster.objects.get(pk=product_id)
+                    # print(f"Product ID: {product_id} retrieved successfully.")
+
                 else:
                     product_item = ProdutItemMaster.objects.get(product_name="5 Gallon")
+                    # print("Product name '5 Gallon' retrieved successfully.")
                 
                 DamageBottleStock.objects.create(
                         product=product_item,
@@ -8734,6 +8799,13 @@ class addDamageBottleAPIView(APIView):
                 scrap_stock.quantity += quantity
                 scrap_stock.save()
                 
+                # Update VanProductStock to decrement empty_can_count
+                van_product_stock = VanProductStock.objects.filter(product=product_item).first()
+                if van_product_stock:
+                    van_product_stock.empty_can_count = max(0, van_product_stock.empty_can_count - quantity)  # Ensure count doesn't go negative
+                    van_product_stock.save()
+                    # print(f"VanProductStock updated: {van_product_stock} EmptyStock {van_product_stock.empty_can_count}.")
+                    
                 status_code = status.HTTP_200_OK
                 response_data = {
                     "status": "true",
@@ -9390,3 +9462,18 @@ class CustomersOutstandingBottlesAPI(APIView):
                     'total_pending_count': total_pending_count,
                 },
         })
+        
+class SalesmanListAPIView(APIView):
+    """
+    API view to list all salesmen.
+    """
+
+    def get(self, request):
+        # Filter for salesmen
+        salesmen = CustomUser.objects.filter(user_type='Salesman')
+
+        # Serialize the salesmen data
+        serializer = SalesmanSerializer(salesmen, many=True)
+
+        # Return the serialized data with a 200 OK response
+        return Response(serializer.data, status=status.HTTP_200_OK)

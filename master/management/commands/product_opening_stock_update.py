@@ -2,6 +2,7 @@ from django.core.management.base import BaseCommand
 from django.utils import timezone
 from datetime import timedelta
 
+from product.models import NextDayStockRequest, Staff_IssueOrders
 from van_management.models import VanProductStock
 
 class Command(BaseCommand):
@@ -24,9 +25,10 @@ class Command(BaseCommand):
                 today_stock.opening_count = yesterday_stock.closing_count
                 today_stock.stock = yesterday_stock.stock
                 today_stock.save()
+                
                 self.stdout.write(self.style.SUCCESS(f'Updated opening count for {today_stock.id}'))
             else:
-                VanProductStock.objects.create(
+                today_stock = VanProductStock.objects.create(
                     product=yesterday_stock.product,
                     van=yesterday_stock.van,
                     created_date=today,
@@ -38,5 +40,8 @@ class Command(BaseCommand):
                     stock=yesterday_stock.stock
                 )
                 self.stdout.write(self.style.SUCCESS(f'Created new stock entry for product {yesterday_stock.product.pk} in van {yesterday_stock.van.pk}'))
+                
+            if (nextday_instances:=NextDayStockRequest.objects.filter(date=today,product=today_stock.product,van=today_stock.van)).exists():
+                today_stock.stock += nextday_instances.first().issued_quantity
 
         self.stdout.write(self.style.SUCCESS('Stock update process completed.'))

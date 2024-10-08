@@ -11,7 +11,7 @@ from product.models import ProdutItemMaster
 from sales_management.models import CollectionPayment
 
 # Read the Excel file
-file_path = '/home/ra/Downloads/S-23Book1.xlsx'
+file_path = '/home/ra/Downloads/S-17 Outstanding.xlsx'
 data = pd.read_excel(file_path)
 print("File path:", file_path)
 print("DataFrame columns:", data.columns)
@@ -29,7 +29,7 @@ if 'amount' not in data.columns:
 
 @transaction.atomic
 def populate_models_from_excel(data):
-    user = CustomUser.objects.get(username="S-23")
+    user = CustomUser.objects.get(username="S-17")
     # outstanding_in = CustomerOutstanding.objects.filter(customer__sales_staff=user,product_type='amount')
     # Invoice.objects.filter(customer__sales_staff=user).delete()
     # outstanding_in.delete()
@@ -116,11 +116,12 @@ def populate_models_from_excel(data):
 
         # Create invoice items
         item = ProdutItemMaster.objects.get(product_name="5 Gallon")
+        water_rate = outstanding_amount.customer_outstanding.customer.get_water_rate()
         InvoiceItems.objects.create(
             category=item.category,
             product_items=item,
             qty=0,
-            rate=outstanding_amount.customer_outstanding.customer.rate,
+            rate=water_rate,
             invoice=invoice,
             remarks='invoice genereted from backend reference no : ' + invoice.reference_no
         )

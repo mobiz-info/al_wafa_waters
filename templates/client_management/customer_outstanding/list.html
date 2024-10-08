@@ -34,8 +34,17 @@
                                     </a>
                                 </div>
                                 <div class="me-2 mr-0">
-                                    <a href="{% url 'print_customer_outstanding' %}?q={{ filter_data.q|default_if_none:'' }}&route_name={{ filter_data.route_name|default_if_none:'' }}" target="_blank">
-                                        <button type="button" class="btn btn-success btn-wave"><i class="fas fa-file-excel"></i> Print</button>
+                                    <a href="{% url 'print_customer_outstanding' %}?product_type={{ filter_data.product_type }}&q={{ filter_data.q|default_if_none:'' }}&route_name={{ filter_data.route_name|default_if_none:'' }}&date={{ filter_data.filter_date }}{% if customer_pk %}&customer_pk={{ customer_pk }}{% endif %}" target="_blank">
+                                        <button type="button" class="btn btn-success btn-wave">
+                                            <i class="fas fa-file-excel"></i> Print
+                                        </button>
+                                    </a>
+                                </div>
+                                <div class="me-2">
+                                    <a href="{% url 'excel_customer_outstanding' %}?product_type={{ filter_data.product_type }}&q={{ filter_data.q|default_if_none:'' }}&route_name={{ filter_data.route_name|default_if_none:'' }}&date={{ filter_data.filter_date }}{% if customer_pk %}&customer_pk={{ customer_pk }}{% endif %}" target="_blank">
+                                        <button type="button" class="btn btn-warning btn-wave">
+                                            <i class="fas fa-file-excel"></i>Excel
+                                        </button>
                                     </a>
                                 </div>
                             </div>
@@ -58,7 +67,8 @@
                                                         <option value="{{ route.route_name }}" {% if route.route_name == filter_data.route_name %}selected{% endif %}>{{ route.route_name }}</option>
                                                     {% endfor %}
                                                 </select>
-                                                <input type="date" name="start_date" class="form-control" value="{{ filter_data.start_date|date:'Y-m-d' }}" />
+                                                <input type="date" class="form-control" id="date" name="date" value="{{ filter_data.filter_date }}">
+                                                {% comment %} <input type="date" name="start_date" class="form-control" value="{{ filter_data.start_date|date:'Y-m-d' }}" /> {% endcomment %}
                                                 <input type="text" name="q" class="form-control" value="{{ filter_data.q }}" placeholder="search" />
                                                 <button type="submit" class="btn btn-primary">
                                                     <i class="bi bi-search"></i> Search
@@ -82,6 +92,8 @@
                                     <th>Room No/Floor No</th>
                                     <th>Route</th>
                                     <th>Outstanding Amount</th>
+                                    <th>Empty Can</th>
+                                    <th>Coupon</th>
                                     <th>Action</th>
                                 </tr>
                             </thead>
@@ -89,7 +101,9 @@
                                 {% load el_pagination_tags %}
                                 {% paginate 20 instances %}
                                 {% for customer in instances %}
-                                    {% get_outstanding_amount customer.pk start_date end_date as outstanding_amount%}
+                                    {% get_outstanding_amount customer.pk date as outstanding_amount%}
+                                    {% get_outstanding_empty_bottle customer.pk date as outstanding_empty_bottles%}
+                                    {% get_outstanding_coupon customer.pk date as outstanding_coupons%}
                                     {% if outstanding_amount != 0 %}
                                     <tr>
                                         <td>{{ forloop.counter }}</td>
@@ -98,8 +112,9 @@
                                         <td>{{ customer.building_name }}</td>
                                         <td>{{ customer.door_house_no }}</td>
                                         <td>{{ customer.routes.route_name }}</td>
-                                        
                                         <td>{{ outstanding_amount }}</td>
+                                        <td>{{ outstanding_empty_bottles }}</td>
+                                        <td>{{ outstanding_coupons }}</td>
                                         <td class="text-center">
                                             <div class="g-2">
                                                 <a href="{% url 'customer_outstanding_details' customer.pk %}" aria-label="View" class="btn btn-warning-light btn-sm" data-bs-toggle="tooltip" data-bs-original-title="View">
@@ -115,6 +130,15 @@
                                     </tr>
                                 {% endfor %}
                             </tbody>
+                            <tfoot>
+                                <tr>
+                                    <td colspan="6" class="text-end fw-bold">Total Outstanding Amount:</td>
+                                    <td class="fw-bold">{{ net_total_outstanding }}</td>
+                                    <td class="fw-bold">{{ total_outstanding_empty_bottles }}</td>
+                                    <td class="fw-bold">{{ total_outstanding_coupons }}</td>
+                                    <td></td>
+                                </tr>
+                            </tfoot>
                         </table>
                     </div>
                     {% get_pages %}

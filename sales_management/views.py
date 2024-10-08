@@ -4075,7 +4075,6 @@ def dsr_summary(request):
     digital_coupon_total = 0
     total_coupon_sales_count = 0
     coupon_total_qty = 0
-    net_load=0
    
     van_instances = Van.objects.none
     van_route = Van_Routes.objects.none
@@ -4449,6 +4448,7 @@ def print_dsr_summary(request):
         #### Bottle Count ####
         total_empty_bottles = van_product_stock.aggregate(totalempty_bottle=Sum('empty_can_count'))['totalempty_bottle'] or 0
         total_supplied_bottles =  van_product_stock.aggregate(total_sold=Sum('sold_count'))['total_sold'] or 0
+        
         pending_bottle_count = van_product_stock.aggregate(total_pending=Sum('pending_count'))['total_pending'] or 0
         damage_bottle_count = van_product_stock.aggregate(total_damage=Sum('damage_count'))['total_damage'] or 0
         closing_stock_count = van_product_stock.aggregate(total_closing=Sum('closing_count'))['total_closing'] or 0
@@ -5872,12 +5872,53 @@ def print_dsr(request):
     
     return render(request, 'sales_management/new_dsr_summary_print.html', context)
 
+from django.core.paginator import Paginator
 
 def collection_list_view(request):
-    instances = CollectionPayment.objects.all().order_by("-created_date")
     
+    filter_data = {}
+
+    start_date = request.GET.get('start_date')
+    end_date = request.GET.get('end_date')
+
+    query = request.GET.get("q")
+    route_filter = request.GET.get('route_name')
+
+    # Initialize queryset
+    instances = CollectionPayment.objects.select_related('customer', 'salesman').all().order_by("-created_date")
+
+    if route_filter:
+        instances = instances.filter(customer__routes__route_name=route_filter)
+
+    if query:
+        instances = instances.filter(
+            Q(customer__customer_name__icontains=query) |
+            Q(receipt_number__icontains=query) |
+            Q(payment_method__icontains=query)
+        )
+        
+    
+    today = datetime.today().date()
+    if start_date and end_date:
+        instances = instances.filter(created_date__range=[start_date, end_date])
+        filter_data['start_date'] = start_date
+        filter_data['end_date'] = end_date
+    
+
+   
+    # Fetch all routes for the dropdown
+    route_li = RouteMaster.objects.all()
+
+    # # Implement pagination (optional if using el_pagination_tags)
+    # paginator = Paginator(instances, 20)  # Show 20 records per page
+    # page_number = request.GET.get('page')
+    # page_obj = paginator.get_page(page_number)
+
     context = {
-        'instances': instances
+        'instances': instances, 
+        'today': today,
+        'filter_data': filter_data,
+        'route_li': route_li,
     }
 
     return render(request, 'sales_management/collection_list.html', context)

@@ -1,5 +1,6 @@
 import json
 import datetime
+from datetime import datetime, date
 
 from django.views import View
 from django.db.models import Q
@@ -482,73 +483,120 @@ def staffIssueOrdersCreate(request, staff_order_details_id):
                         
                     if van_limit:
                         if 0 < int(quantity_issued) <= int(product_stock.quantity):
-                            # Creating Staff Issue Order
-                            data = form.save(commit=False)
-                            # data.created_by = request.user.id
-                            data.modified_by = request.user.id
-                            data.modified_date = datetime.now()
-                            data.created_date = datetime.now()
-                            data.product_id = issue.product_id
-                            data.staff_Orders_details_id = issue
-                            data.stock_quantity = stock_quantity
-                            data.quantity_issued = int(data.quantity_issued) + int(quantity_issued)
-                            data.van = van
-                            data.save()
                             
-                            # Updating ProductStock
-                            product_stock.quantity -= int(quantity_issued)
-                            product_stock.save()
-                            
-                            # Updating VanStock and VanProductStock
-                            # van = Van.objects.get(salesman_id__id=form.cleaned_data.get('salesman_id').pk)
-                            vanstock = VanStock.objects.create(
-                                created_by=request.user.id,
-                                created_date=datetime.now(),
-                                modified_by=request.user.id,
-                                modified_date=datetime.now(),
-                                van=van,
-                                stock_type='opening_stock',
-                            )
-                            VanProductItems.objects.create(
-                                product=issue.product_id,
-                                count=int(quantity_issued),
-                                van_stock=vanstock,
-                            )
-                            
-                            if VanProductStock.objects.filter(created_date=datetime.today().date(),product=issue.product_id,van=van).exists():
-                                van_product_stock = VanProductStock.objects.get(created_date=datetime.today().date(),product=issue.product_id,van=van)
-                                van_product_stock.stock += int(quantity_issued)
-                                van_product_stock.save()
+                            # Check the delivery date
+                            delivery_date = issue.staff_order_id.delivery_date
+                            today = date.today()
+
+                            if delivery_date == today:
+                                # **Today's Delivery: Update VanProductStock**
+                                
+                                # Creating Staff Issue Order
+                                data = form.save(commit=False)
+                                # data.created_by = request.user.id
+                                data.modified_by = request.user.id
+                                data.modified_date = datetime.now()
+                                data.created_date = datetime.now()
+                                data.product_id = issue.product_id
+                                data.staff_Orders_details_id = issue
+                                data.stock_quantity = stock_quantity
+                                data.quantity_issued = int(data.quantity_issued) + int(quantity_issued)
+                                data.van = van
+                                data.save()
+                                
+                                # Updating ProductStock
+                                product_stock.quantity -= int(quantity_issued)
+                                product_stock.save()
+                                
+                                # Updating VanStock and VanProductStock
+                                # van = Van.objects.get(salesman_id__id=form.cleaned_data.get('salesman_id').pk)
+                                vanstock = VanStock.objects.create(
+                                    created_by=request.user.id,
+                                    created_date=datetime.now(),
+                                    modified_by=request.user.id,
+                                    modified_date=datetime.now(),
+                                    van=van,
+                                    stock_type='opening_stock',
+                                )
+                                VanProductItems.objects.create(
+                                    product=issue.product_id,
+                                    count=int(quantity_issued),
+                                    van_stock=vanstock,
+                                )
+                                
+                                if VanProductStock.objects.filter(created_date=datetime.today().date(),product=issue.product_id,van=van).exists():
+                                    van_product_stock = VanProductStock.objects.get(created_date=datetime.today().date(),product=issue.product_id,van=van)
+                                    van_product_stock.stock += int(quantity_issued)
+                                    van_product_stock.save()
+                                else:
+                                    van_product_stock = VanProductStock.objects.create(
+                                        created_date=datetime.now().date(),
+                                        product=issue.product_id,
+                                        van=van,
+                                        stock=int(quantity_issued)
+                                        )
+                                    
+                                if issue.product_id.product_name == "5 Gallon":
+                                    if (bottle_count:=BottleCount.objects.filter(
+                                        van=van_product_stock.van,
+                                        created_date__date=van_product_stock.created_date
+                                        )).exists():
+                                        
+                                        bottle_count = bottle_count.first()
+                                    else:
+                                        bottle_count = BottleCount.objects.create(van=van_product_stock.van,created_date=van_product_stock.created_date)
+                                    bottle_count.opening_stock += van_product_stock.stock
+                                    bottle_count.save()
+                                
+                                issue.issued_qty += int(quantity_issued)
+                                issue.save()
+                                
+                                response_data = {
+                                    "status": "true",
+                                    "title": "Successfully Created",
+                                    "message": "created successfully.",
+                                    'redirect': 'true',
+                                    "redirect_url": reverse('staff_issue_orders_list')
+                                }
                             else:
-                                van_product_stock = VanProductStock.objects.create(
-                                    created_date=datetime.now().date(),
+                                # **Next Day Delivery: Create NextDayStockRequest**
+                                # Creating Staff Issue Order
+                                data = form.save(commit=False)
+                                data.modified_by = request.user.id
+                                data.modified_date = datetime.now()
+                                data.created_date = datetime.now()
+                                data.product_id = issue.product_id
+                                data.staff_Orders_details_id = issue
+                                data.stock_quantity = stock_quantity
+                                data.quantity_issued = int(data.quantity_issued) + int(quantity_issued)
+                                data.van = van
+                                data.save()
+
+                                # Updating ProductStock
+                                product_stock.quantity -= int(quantity_issued)
+                                product_stock.save()
+
+                                # Create NextDayStockRequest
+                                NextDayStockRequest.objects.create(
                                     product=issue.product_id,
                                     van=van,
-                                    stock=int(quantity_issued)
-                                    )
-                                
-                            if issue.product_id.product_name == "5 Gallon":
-                                if (bottle_count:=BottleCount.objects.filter(
-                                    van=van_product_stock.van,
-                                    created_date__date=van_product_stock.created_date
-                                    )).exists():
-                                    
-                                    bottle_count = bottle_count.first()
-                                else:
-                                    bottle_count = BottleCount.objects.create(van=van_product_stock.van,created_date=van_product_stock.created_date)
-                                bottle_count.opening_stock += van_product_stock.stock
-                                bottle_count.save()
-                            
-                            issue.issued_qty += int(quantity_issued)
-                            issue.save()
-                            
-                            response_data = {
-                                "status": "true",
-                                "title": "Successfully Created",
-                                "message": "created successfully.",
-                                'redirect': 'true',
-                                "redirect_url": reverse('staff_issue_orders_list')
-                            }
+                                    issued_quantity=str(quantity_issued),  # Assuming quantity is stored as string
+                                    date=delivery_date,
+                                    created_by=request.user.id,
+                                    modified_by=request.user.id,
+                                    modified_date=datetime.now()
+                                )
+                                # Update issued quantity
+                                issue.issued_qty += int(quantity_issued)
+                                issue.save()
+
+                                response_data = {
+                                    "status": "true",
+                                    "title": "Successfully Created",
+                                    "message": "Next day stock request created successfully.",
+                                    'redirect': 'true',
+                                    "redirect_url": reverse('staff_issue_orders_list')
+                                }
                         else:
                             response_data = {
                                 "status": "false",
