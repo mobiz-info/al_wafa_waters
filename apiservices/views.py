@@ -9238,19 +9238,23 @@ class ProductRouteSalesReportAPIView(APIView):
     def get(self, request):
         start_date = request.GET.get('start_date')
         end_date = request.GET.get('end_date')
-        
+        product_id = request.GET.get('product_id') 
+
         if not start_date:
             start_date = datetime.today().date()
         else:
             start_date = datetime.strptime(start_date, '%Y-%m-%d').date()
-        
+
         if not end_date:
             end_date = datetime.today().date() + timedelta(days=1)
         else:
             end_date = datetime.strptime(end_date, '%Y-%m-%d').date()
+
+        instances = ProdutItemMaster.objects.exclude(category__category_name="Coupons")
         
-        instances = ProdutItemMaster.objects.all()
-                
+        if product_id:
+            instances = instances.filter(id=product_id)
+        
         serializer = ProductSalesReportSerializer(
             instances,
             many=True,
