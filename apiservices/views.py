@@ -9308,9 +9308,11 @@ class SalesInvoicesAPIView(APIView):
         return Response(response_data, status=status.HTTP_200_OK)
     
 class CustomerSupplyListAPIView(APIView):
+    authentication_classes = [BasicAuthentication]
+    permission_classes = [IsAuthenticated]
     
     def get(self, request, *args, **kwargs):
-        instances = CustomerSupply.objects.all().order_by("-created_date")
+        instances = CustomerSupply.objects.filter(salesman=request.user).order_by("-created_date")
         
         product_id = request.GET.get('product_id', None)
         filter_date_str = request.GET.get('filter_date', None)
@@ -9329,7 +9331,7 @@ class CustomerSupplyListAPIView(APIView):
         
         response_data = {
             'items': data,
-            'total': total_supplied
+            'total_supplied': total_supplied
         }
 
         return Response(response_data, status=status.HTTP_200_OK)
