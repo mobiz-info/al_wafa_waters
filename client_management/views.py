@@ -467,7 +467,6 @@ def customer_supply_list(request):
     instances = CustomerSupply.objects.all().order_by("-created_date")
     routes = RouteMaster.objects.all()
     
-    # Check if 'start_date' and 'end_date' are present in the GET request
     if request.GET.get('start_date') and request.GET.get('end_date'):
         start_date_str = request.GET.get('start_date')
         end_date_str = request.GET.get('end_date')
@@ -475,10 +474,8 @@ def customer_supply_list(request):
         start_date_str = datetime.today().date().strftime('%Y-%m-%d')
         end_date_str = datetime.today().date().strftime('%Y-%m-%d')
         
-    print(start_date_str,end_date_str)
     route_name = request.GET.get('route_name')
 
-    # Convert the string dates to date objects and filter the instances
     if start_date_str and end_date_str:
         start_date = datetime.strptime(start_date_str, '%Y-%m-%d').date()
         end_date = datetime.strptime(end_date_str, '%Y-%m-%d').date()
@@ -489,6 +486,15 @@ def customer_supply_list(request):
     if route_name:
         instances = instances.filter(customer__routes__route_name=route_name)
         filter_data['route_name'] = route_name
+        
+    query = request.GET.get("q")
+    if query:
+        instances = instances.filter(
+            Q(customer__custom_id__icontains=query) |
+            Q(customer__customer_name__icontains=query) |
+            Q(customer__building_name__icontains=query)
+        )
+        filter_data['q'] = query
         
     for instance in instances:
         instance.can_edit = (timezone.now().date() - instance.created_date.date()).days <= 3
