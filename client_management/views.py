@@ -1596,7 +1596,10 @@ def update_van_product_stock(customer_supply_instance, supply_items_instances, f
                 if item_data.product.product_name == "5 Gallon":
                     van_stock.empty_can_count += customer_supply_instance.collected_empty_bottle
                 van_stock.stock += item_data.quantity
-                van_stock.sold_count -= item_data.quantity
+                if van_stock.sold_count > 0:
+                    van_stock.sold_count -= item_data.quantity
+                else:
+                    van_stock.sold_count = 0 
                 van_stock.save()
 
 #------------------------------REPORT----------------------------------------
