@@ -75,8 +75,8 @@ TEMPLATES = [
 
 WSGI_APPLICATION = 'core.wsgi.application'
 
-# cred = credentials.Certificate("Sanawaterfcm-4cd9e-firebase-adminsdk-ijou8-4ac8e65e75.json")
-# firebase_admin.initialize_app(cred, name='Sanawaterfcm')
+# cred = credentials.Certificate("Al-Wafawaterfcm-4cd9e-firebase-adminsdk-ijou8-4ac8e65e75.json")
+# firebase_admin.initialize_app(cred, name='Al-Wafawaterfcm')
 
 # Database
 # https://docs.djangoproject.com/en/4.2/ref/settings/#databases
@@ -201,7 +201,7 @@ X_FRAME_OPTIONS = 'ALLOWALL'
 
 XS_SHARING_ALLOWED_METHODS = ['POST','GET','OPTIONS', 'PUT', 'DELETE']
 
-# InterSanaization
+# InterAl-Wafaization
 # https://docs.djangoproject.com/en/4.2/topics/i18n/
 
 LANGUAGE_CODE = 'en-us'

@@ -1,44 +1,44 @@
-from django.shortcuts import render
-from django.contrib.auth.decorators import login_required
-import datetime
-from django.contrib import messages
-from django.shortcuts import render, redirect,HttpResponse
-from django.views import View
-from django.core.cache import cache
-
-from apiservices.notification import notification
-from .forms import *
 import uuid
-from accounts.models import *
-from .models import *
-from django.utils import timezone
-from django.utils.decorators import method_decorator
-from django.views.decorators.csrf import csrf_exempt
-from django.http import JsonResponse, HttpResponse
-from django.contrib.auth.hashers import make_password, check_password
-from .models import *
+import datetime
 from datetime import timedelta
+
+from django.views import View
+from django.utils import timezone
+from django.shortcuts import render
+from django.contrib import messages
+from django.core.cache import cache
+from django.db import transaction, IntegrityError
+from django.http import JsonResponse, HttpResponse
+from django.views.decorators.csrf import csrf_exempt
+from django.utils.decorators import method_decorator
+from django.contrib.auth.decorators import login_required
+from django.shortcuts import render, redirect,HttpResponse
+from django.shortcuts import render, redirect, get_object_or_404
 from django.db.models import Sum, Case, When, IntegerField,Count,Q
-from . serializers import *
+from django.contrib.auth.hashers import make_password, check_password
+
 from rest_framework.views import APIView
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from rest_framework import status
 from rest_framework.authentication import BasicAuthentication 
 from rest_framework.permissions import IsAuthenticated
-from django.shortcuts import render, redirect, get_object_or_404
-from django.shortcuts import render, redirect, get_object_or_404
-from van_management.models import Van, VanProductStock , VanCouponStock
-from van_management.models import Expense,Van_Routes,CustomerProductReturn,CustomerProductReplace
 
+from .forms import *
+from .models import *
+from . serializers import *
+from accounts.models import *
+from accounts.views import log_activity
+from invoice_management.models import Invoice
 from customer_care.models import DiffBottlesModel
+from apiservices.notification import notification
+from coupon_management.models import CouponStock,CouponLeaflet
+from sales_management.models import CollectionItems,CollectionPayment
 from client_management.models import CustomerSupply,CustomerCoupon, CustomerOutstandingReport, CustomerSupplyCoupon
+from van_management.models import Van, VanProductStock , VanCouponStock, Expense,Van_Routes,CustomerProductReturn,CustomerProductReplace
 from client_management.models import OutstandingAmount,CustomerSupplyStock,CustomerCouponStock, Vacation, NonvisitReport,CustomerSupplyItems
 
-from sales_management.models import CollectionItems,CollectionPayment
-from invoice_management.models import Invoice
-from coupon_management.models import CouponStock,CouponLeaflet
-from accounts.views import log_activity
+
 from product.models import WashedUsedProduct
 from apiservices.views import find_customers
 import json

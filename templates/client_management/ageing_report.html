@@ -1,0 +1,78 @@
+{% extends 'base.html' %}
+{% block title %} Ageing Report {% endblock %}
+{% block content %}
+{% load client_templatetags %} 
+<!-- Page Header -->
+<div class="page-header-breadcrumb d-md-flex d-block align-items-center justify-content-between ">
+    <h4 class="fw-medium mb-0">Ageing Report</h4>
+    <ol class="breadcrumb">
+        <li class="breadcrumb-item"><a href="javascript:void(0);" class="text-white-30">Client Management </a></li>
+        <li class="breadcrumb-item active" aria-current="page">Ageing Report</li>
+    </ol>
+</div>
+<div class="main-content app-content">
+    <div class="container-fluid">
+        <!-- Start:: row-2 -->
+        <div class="row">
+            <div class="col-xl-12">
+                <div class="card custom-card">
+                    <div class="card-header">
+                        <div class="card-title">
+                             Ageing Report
+                        </div>
+                    </div>
+                         
+                        <div id="table-container" style="overflow:scroll;">
+                            <div class="card-body">
+                                <table id="responsiveDataTable" class="table table-bordered text-wrap" style="width: 100%">
+                                    <thead>
+                                        <tr>
+                                            <th style="text-align:center;width:5%;" scope="col">Sl.No</th>
+                                            <th style="text-align:center;" scope="col">Route</th>
+                                            <th style="text-align:center;" scope="col">Salesman</th>
+                                            <th style="text-align:center;" scope="col">&lt; 30 days</th>
+                                            <th style="text-align:center;" scope="col">31 - 60 days</th>
+                                            <th style="text-align:center;" scope="col">61 - 90 days</th>
+                                            <th style="text-align:center;" scope="col">91 - 150 days</th>
+                                            <th style="text-align:center;" scope="col">151 - 365 days</th>
+                                            <th style="text-align:center;" scope="col">More than 365</th>
+                                            <th style="text-align:center;" scope="col">Grand Total</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        {% for report in ageing_data  %}
+                                        <tr>
+                                            <td style="text-align:center;">{{ forloop.counter }}</td>
+                                            <td style="text-align:center;">{{ report.route }}</td>
+                                            <td style="text-align:center;">{{ report.salesman }}</td>
+                                            <td>{{ record.<30_days }}</td>
+                                                <td>{{ record.31-60_days }}</td>
+                                                <td>{{ record.61-90_days }}</td>
+                                                <td>{{ record.91-150_days }}</td>
+                                                <td>{{ record.151-365_days }}</td>
+                                                <td>{{ record.>365_days }}</td>
+                                            <td style="text-align:center;">{{ report.grand_total }}</td>
+                                        </tr>
+                                        {% endfor %}
+                                    </tbody>
+                                </table>
+                            </div>
+                            
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+    </div>
+</div>
+
+
+
+<script>
+    function resetFilters() {
+        // Redirect to the same page
+        location.href = "{% url 'ageing_report' %}";
+    }
+</script>
+
+{% endblock %}

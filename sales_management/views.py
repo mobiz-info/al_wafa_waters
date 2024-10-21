@@ -63,6 +63,8 @@ from django.template.loader import get_template
 from xhtml2pdf import pisa
 from django.conf import settings
 import openpyxl
+from django.db import transaction
+from accounts.views import log_activity
 
 class TransactionHistoryListView(ListView):
     model = Transaction
@@ -103,6 +105,10 @@ def payment_submit(request):
         print("Amount Received:", amount_received)
         print("Balance:", balance)
 
+        log_activity(
+            created_by=request.user.username,
+            description=f"Payment received: Amount: {amount_received}, Balance: {balance}"
+        )
         # Return a JSON response
         return JsonResponse({'message': 'Payment data received successfully'}, status=200)
     else:
@@ -241,6 +247,12 @@ class CustomerDetailsView(View):
             product = product_form.save(commit=False)
             product.created_by = request.user.username  # Set the created_by field
             product.save()
+            
+            log_activity(
+                created_by=request.user.username,
+                description=f"Product added for customer {user_det.customer_name}"
+            )
+            
             return redirect('customer_details', pk=pk)
         else:
             # If the form is not valid, re-render the page with the form errors
@@ -1261,7 +1273,7 @@ def download_salesreport_excel(request):
 #         table_border_format = workbook.add_format({'border':1})
 #         worksheet.conditional_format(4, 0, len(df.index)+4, len(df.columns) - 1, {'type':'cell', 'criteria': '>', 'value':0, 'format':table_border_format})
 #         merge_format = workbook.add_format({'align': 'center', 'bold': True, 'font_size': 16, 'border': 1})
-#         worksheet.merge_range('A1:J2'SanaSana Water', merge_format)
+#         worksheet.merge_range('A1:J2'Al-WafaAl-Wafa Water', merge_format)
 #         merge_format = workbook.add_format({'align': 'center', 'bold': True, 'border': 1})
 #         worksheet.merge_range('A3:J3', f'    Daily Collection Report   ', merge_format)
 #         # worksheet.merge_range('E3:H3', f'Date: {def_date}', merge_format)
@@ -1350,13 +1362,30 @@ def product_route_salesreport(request):
             customer_supply__customer__sales_type='CASH COUPON'
         )
         filter_data["route_name"] = route_filter
+        
+    totals = customersupplyitems.aggregate(
+        total_quantity=Sum('quantity'),
+        total_empty_bottle=Sum('customer_supply__collected_empty_bottle'),
+        total_amount_collected=Sum('amount'),
+    )
     
+    total_coupon_collected = CustomerSupplyCoupon.objects.filter(
+        customer_supply__in=customersupplyitems.values('customer_supply')
+    ).annotate(leaf_count=Count('leaf')).aggregate(total=Sum('leaf_count'))['total'] or 0
+
+    totals['total_coupon_collected'] = total_coupon_collected
+    
+    log_activity(
+        created_by=request.user,
+        description=f"Generated product route sales report with filters: {filter_data}"
+    )
     context = {
         'customersupplyitems': customersupplyitems.order_by("-customer_supply__created_date"),
         'products': products,
         'filter_data': filter_data,
         'coupons_collected': coupons_collected,
         'route_li': route_li,
+        'totals':totals,
     }
     return render(request, template, context)
 
@@ -2165,59 +2194,117 @@ def customerSales_Print_report(request):
 
 
 def collectionreport(request):
+    
     filter_data = {}
     selected_route_id = request.GET.get('route_name')
     template = 'sales_management/collection_report.html'
-    
+
+    # Fetch routes and set default date range
     routes = RouteMaster.objects.all()
     today = datetime.today()
-    
     start_date_str = request.GET.get('start_date')
     end_date_str = request.GET.get('end_date')
     
-    start_date = datetime.today().date()
-    end_date = datetime.today().date() + timedelta(days=1)
-
+    start_date = today.date()
+    end_date = today.date() + timedelta(days=1)
+    
+    # Parse date filters if provided
     if start_date_str and end_date_str:
         start_date = datetime.strptime(start_date_str, '%Y-%m-%d').date()
         end_date = datetime.strptime(end_date_str, '%Y-%m-%d').date()
-    
+
     filter_data['start_date'] = start_date.strftime('%Y-%m-%d')
     filter_data['end_date'] = end_date.strftime('%Y-%m-%d')
-    
-    # Filter and count collection payments
-    collection_payments = CollectionItems.objects.filter(
-        collection_payment__created_date__date__range=[start_date, end_date]
+
+    # Fetch collection payments within the date range
+    collection_payments = CollectionPayment.objects.filter(
+        created_date__date__range=[start_date, end_date]
     ).values(
-        'collection_payment__customer__custom_id', 
-        'collection_payment__customer__customer_name',
-        'collection_payment__customer__mobile_no',
-        'collection_payment__customer__routes__route_name',
-        'collection_payment__customer__building_name',
-        'collection_payment__customer__door_house_no',
-        'collection_payment__created_date__date',
-        'collection_payment__payment_method',
-        'collection_payment__customer__sales_type',
-        
-        
+        'customer__custom_id', 
+        'customer__customer_name',
+        'customer__mobile_no',
+        'customer__routes__route_name',
+        'customer__building_name',
+        'customer__door_house_no',
+        'created_date__date',
+        'payment_method',
+        'customer__sales_type'
     ).annotate(
-        count_amount=Sum('amount'),
-        count_balance=Sum('balance'),
-        count_amount_received=Sum('amount_received')
-    ).order_by('-collection_payment__created_date__date')
-    
+        total_amount=Sum('collectionitems__amount'),
+        total_discount=Sum('collectionitems__invoice__discount'),
+        total_net_taxable=Sum('collectionitems__invoice__net_taxable'),
+        total_vat=Sum('collectionitems__invoice__vat'),
+        collected_amount=Sum('collectionitems__amount_received')
+    ).order_by('-created_date')
+
+    # Filter by route if selected
     if selected_route_id:
         selected_route = RouteMaster.objects.get(route_name=selected_route_id)
-        collection_payments = collection_payments.filter(collection_payment__customer__routes__route_name=selected_route.route_name)
+        collection_payments = collection_payments.filter(customer__routes__route_name=selected_route.route_name)
         filter_data['selected_route'] = selected_route_id
-    
+
+    # Prepare the context for the template
     context = {
         'collection_payments': collection_payments, 
         'routes': routes, 
         'today': today,
         'filter_data': filter_data,
     }
+
     return render(request, template, context)
+    # filter_data = {}
+    # selected_route_id = request.GET.get('route_name')
+    # template = 'sales_management/collection_report.html'
+    
+    # routes = RouteMaster.objects.all()
+    # today = datetime.today()
+    
+    # start_date_str = request.GET.get('start_date')
+    # end_date_str = request.GET.get('end_date')
+    
+    # start_date = datetime.today().date()
+    # end_date = datetime.today().date() + timedelta(days=1)
+
+    # if start_date_str and end_date_str:
+    #     start_date = datetime.strptime(start_date_str, '%Y-%m-%d').date()
+    #     end_date = datetime.strptime(end_date_str, '%Y-%m-%d').date()
+    
+    # filter_data['start_date'] = start_date.strftime('%Y-%m-%d')
+    # filter_data['end_date'] = end_date.strftime('%Y-%m-%d')
+    
+    # # Filter and count collection payments
+    # collection_payments = CollectionItems.objects.filter(
+    #     collection_payment__created_date__date__range=[start_date, end_date]
+    # ).values(
+    #     'collection_payment__customer__custom_id', 
+    #     'collection_payment__customer__customer_name',
+    #     'collection_payment__customer__mobile_no',
+    #     'collection_payment__customer__routes__route_name',
+    #     'collection_payment__customer__building_name',
+    #     'collection_payment__customer__door_house_no',
+    #     'collection_payment__created_date__date',
+    #     'collection_payment__payment_method',
+    #     'collection_payment__customer__sales_type',
+        
+        
+    # ).annotate(
+    #     count_amount=Sum('amount'),
+    #     count_balance=Sum('balance'),
+    #     count_amount_received=Sum('amount_received')
+    # ).order_by('-collection_payment__created_date__date')
+    
+    # if selected_route_id:
+    #     selected_route = RouteMaster.objects.get(route_name=selected_route_id)
+    #     collection_payments = collection_payments.filter(collection_payment__customer__routes__route_name=selected_route.route_name)
+    #     filter_data['selected_route'] = selected_route_id
+    
+    # context = {
+    #     'collection_payments': collection_payments, 
+    #     'routes': routes, 
+    #     'today': today,
+    #     'filter_data': filter_data,
+    # }
+    # return render(request, template, context)
 
 
 def collection_report_excel(request):
@@ -6389,3 +6476,217 @@ def coupon_sales_print_view(request):
     }
 
     return render(request, 'sales_management/coupon_sales_print_report.html', context)
+
+def receipt_list_view(request):
+    
+    filter_data = {}
+
+    start_date = request.GET.get('start_date')
+    end_date = request.GET.get('end_date')
+
+    query = request.GET.get("q")
+    route_filter = request.GET.get('route_name')
+
+    receipts = Receipt.objects.all().order_by('-created_date')
+    if route_filter:
+        receipts = receipts.filter(customer__routes__route_name=route_filter)
+
+    if query:
+        receipts = receipts.filter(
+            Q(customer__customer_name__icontains=query) |
+            Q(receipt_number__icontains=query) |
+            Q(customer__custom_id__icontains=query)|
+            Q(invoice_number__icontains=query)
+        )
+        
+    
+    today = datetime.today().date()
+    if start_date and end_date:
+        receipts = receipts.filter(created_date__range=[start_date, end_date])
+        filter_data['start_date'] = start_date
+        filter_data['end_date'] = end_date
+    
+
+   
+    # Fetch all routes for the dropdown
+    route_li = RouteMaster.objects.all()
+
+    context = {
+        'receipts': receipts, 
+        'today': today,
+        'filter_data': filter_data,
+        'route_li': route_li,
+    }
+
+    return render(request, 'sales_management/receipt_list.html', context)
+
+def delete_receipt(request, receipt_number, customer_id):
+    
+    response_data = {
+        "status": "false",
+        "title": "Error",
+        "message": "An error occurred during deletion.",
+    }
+
+    receipt = get_object_or_404(Receipt, receipt_number=receipt_number, customer=customer_id)
+    transaction_type = receipt.transaction_type
+    invoice_number = receipt.invoice_number
+
+    
+    if transaction_type =="supply":
+        try:
+            
+            customer_outstanding, _ = CustomerOutstanding.objects.get_or_create(
+                customer=receipt.customer,
+                product_type="amount", 
+                defaults={
+                    'invoice_no': invoice_number,
+                    'created_by': request.user,
+                    'created_date': timezone.now()
+                }
+            )
+            
+            outstanding_amount, created = OutstandingAmount.objects.get_or_create(
+                customer_outstanding=customer_outstanding,
+                customer_outstanding__customer=receipt.customer,
+                customer_outstanding__invoice_no=receipt.invoice_number,
+                defaults={'amount': 0} 
+            )
+
+            if created or outstanding_amount.amount == 0:
+                outstanding_amount.amount += receipt.amount_received
+                outstanding_amount.save()
+
+            outstanding_instance, created = CustomerOutstandingReport.objects.get_or_create(
+                customer=receipt.customer,
+                product_type="amount",
+                defaults={'value': 0}  
+            )
+
+            outstanding_instance.value += receipt.amount_received
+            outstanding_instance.save()
+            
+            invoice = Invoice.objects.get(invoice_no=invoice_number, customer=receipt.customer)
+            invoice.amout_recieved = 0  
+            invoice.amout_total = receipt.amount_received  
+            invoice.invoice_status = "non_paid"
+            invoice.save()
+
+        except CustomerOutstandingReport.DoesNotExist:
+            response_data["message"] = "Customer outstanding report not found."
+            return HttpResponse(json.dumps(response_data), content_type='application/javascript')
+
+
+            
+    elif transaction_type == "collection":
+        try:
+            customer_outstanding, _ = CustomerOutstanding.objects.get_or_create(
+                customer=receipt.customer,
+                product_type="amount",  
+                defaults={
+                    'invoice_no': invoice_number,
+                    'created_by': request.user,
+                    'created_date': timezone.now()
+                }
+            )
+            
+            outstanding_amount, created = OutstandingAmount.objects.get_or_create(
+                customer_outstanding=customer_outstanding,
+                customer_outstanding__customer=receipt.customer,
+                customer_outstanding__invoice_no=receipt.invoice_number,
+                defaults={'amount': 0}  
+            )
+
+            if created or outstanding_amount.amount == 0:
+                outstanding_amount.amount += receipt.amount_received
+                outstanding_amount.save()
+
+            outstanding_instance, created = CustomerOutstandingReport.objects.get_or_create(
+                customer=receipt.customer,
+                product_type="amount",
+                defaults={'value': 0}
+            )
+
+            outstanding_instance.value += receipt.amount_received
+            outstanding_instance.save()
+
+        except CustomerOutstandingReport.DoesNotExist:
+            response_data["message"] = "Customer outstanding report not found."
+            return HttpResponse(json.dumps(response_data), content_type='application/javascript')
+
+        try:
+            collection_payment = CollectionPayment.objects.get(receipt_number=receipt_number, customer=customer_id)
+            collection_items = CollectionItems.objects.filter(collection_payment=collection_payment)
+            
+            for item in collection_items:
+                invoices = item.invoice
+                
+                if invoices:
+                    
+                    invoice = Invoice.objects.get(invoice_no=invoices.invoice_no, customer=receipt.customer)
+                        
+                    invoice.amout_recieved = 0 
+                    invoice.amout_total = item.amount_received 
+                    invoice.invoice_status = "non_paid" 
+                    invoice.save()
+        except CollectionPayment.DoesNotExist:
+            response_data["message"] = "Collection payment not found."
+            return HttpResponse(json.dumps(response_data), content_type='application/javascript')
+        
+    elif transaction_type=="coupon_rechange":
+        try:
+            customer_outstanding, _ = CustomerOutstanding.objects.get_or_create(
+                customer=receipt.customer,
+                product_type="amount",  
+                defaults={
+                    'invoice_no': invoice_number,
+                    'created_by': request.user,
+                    'created_date': timezone.now()
+                }
+            )
+            
+            outstanding_amount, created = OutstandingAmount.objects.get_or_create(
+                customer_outstanding=customer_outstanding,
+                customer_outstanding__customer=receipt.customer,
+                customer_outstanding__invoice_no=receipt.invoice_number,
+                defaults={'amount': 0} 
+            )
+
+            if created or outstanding_amount.amount == 0:
+                outstanding_amount.amount += receipt.amount_received
+                outstanding_amount.save()
+
+            outstanding_instance, created = CustomerOutstandingReport.objects.get_or_create(
+                customer=receipt.customer,
+                product_type="amount",
+                defaults={'value': 0} 
+            )
+
+            outstanding_instance.value += receipt.amount_received
+            outstanding_instance.save()
+
+        except CustomerOutstandingReport.DoesNotExist:
+            response_data["message"] = "Customer outstanding report not found."
+            return HttpResponse(json.dumps(response_data), content_type='application/javascript')
+ 
+        try:
+            invoice = Invoice.objects.get(invoice_no=invoice_number, customer_id=customer_id)
+            invoice.amout_recieved = 0  
+            invoice.amout_total = receipt.amount_received  
+            invoice.invoice_status = "non_paid"
+            invoice.save()
+        except Invoice.DoesNotExist:
+            response_data["message"] = "Invoice not found."
+            return HttpResponse(json.dumps(response_data), content_type='application/javascript')
+
+    receipt.delete()
+
+    response_data = {
+        "status": "true",
+        "title": "Successfully Deleted",
+        "message": "Receipt and associated data successfully deleted and reversed.",
+        "redirect": "true",
+        "redirect_url": reverse('receipt_list'),
+    }
+
+    return HttpResponse(json.dumps(response_data), content_type='application/javascript')

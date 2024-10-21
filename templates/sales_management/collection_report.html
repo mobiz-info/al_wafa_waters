@@ -1,7 +1,7 @@
 {% extends 'base.html' %}
 {% block title %} Periodic Collection Report {% endblock %}
 {% block content %}
-
+{% load sales_templatetags %}
 
 <!-- Page Header -->
 <div class="page-header-breadcrumb d-md-flex d-block align-items-center justify-content-between ">
@@ -65,6 +65,7 @@
                                         <th style="text-align:center;width:5%;" scope="col">Sl.No</th>
                                         <th style="text-align:center;" scope="col">Date</th>
                                         <th style="text-align:center;" scope="col">Customer/<br>Mobile No</th>
+                                        <th style="text-align:center;" scope="col">Customer ID</th>
                                         <th style="text-align:center;" scope="col">Route</th>
                                         <th style="text-align:center;" scope="col">Building Name<br>No</th>
                                         {% comment %} <th style="text-align:center;" scope="col">Receipt No/<br>Reference No</th> {% endcomment %}
@@ -81,17 +82,17 @@
                                         {% for data in collection_payments %}
                                         <tr>
                                             <td style="text-align:right;">{{ forloop.counter }}</td>
-                                            <td style="text-align:right;">{{ data.collection_payment__created_date__date|date:"d/m/Y" }}</td>
-                                            <td style="text-align:left;">{{ data.collection_payment__customer__customer_name }}<br>{{ data.collection_payment__customer__mobile_no }}</td>
-                                            <td style="text-align:left;">{{ data.collection_payment__customer__routes__route_name }}</td>
-                                            <td style="text-align:left;">{{ data.collection_payment__customer__building_name }}<br>{{ data.collection_payment__customer__door_house_no }}</td>
-                                            {% comment %} <td style="text-align:right;">{{ data.invoice.reference_no }}</td> {% endcomment %}
-                                            <td style="text-align:right;">{{ data.count_amount }}</td>
-                                            <td style="text-align:right;">{{ data.count_amount_received }}</td>
-                                            <td style="text-align:right;">{{ data.count_balance }}</td>
-
-                                            <td style="text-align:left;">{{ data.collection_payment__payment_method }}</td>
-                                            <td style="text-align:left;">{{ data.collection_payment__customer__sales_type }}</td>
+                                            <td style="text-align:right;">{{ data.created_date__date|date:"d/m/Y" }}</td>
+                                            <td style="text-align:left;">{{ data.customer__customer_name }}<br>{{ data.customer__mobile_no }}</td>
+                                            <td style="text-align:left;">{{ data.customer__custom_id }}</td>
+                                            <td style="text-align:left;">{{ data.customer__routes__route_name }}</td>
+                                            <td style="text-align:left;"> {{ data.customer__building_name }}<br>{{ data.customer__door_house_no }}</td>
+                                            <td style="text-align:center;">{{ data.total_amount  }}</td>
+                                            <td style="text-align:center;">{{ data.collected_amount }}</td>
+                                            <td style="text-align:center;">{{ data.total_amount|subtract:data.collected_amount}}</td>
+                                            <td style="text-align:left;">{{ data.payment_method }}</td>
+                                            <td style="text-align:left;">{{ data.customer__sales_type }}</td>
+                                           
                                         </tr>
                                     {%endfor%}
                                     </tbody>

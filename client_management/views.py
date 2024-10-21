@@ -10,7 +10,7 @@ from van_management.models import *
 from decimal import Decimal
 
 from django.views import View
-from django.db.models import Q, Sum, Count, DecimalField, F
+from django.db.models import Q, Sum, Count, DecimalField, F, IntegerField, Value
 from django.urls import reverse
 from django.contrib import messages
 from django.db import transaction, IntegrityError
@@ -26,7 +26,7 @@ from accounts.models import *
 from master.functions import generate_form_errors
 from master.models import RouteMaster, LocationMaster
 from van_management.models import Van, Van_Routes
-# from sales_management.forms import CustomerCustodyForm, ProductForm
+from sales_management.models import CollectionItems
 from rest_framework import status
 
 from django.template.loader import get_template
@@ -35,6 +35,7 @@ from openpyxl import Workbook
 from openpyxl.styles import Alignment
 from competitor_analysis.forms import CompetitorAnalysisFilterForm
 from django.db.models import Q
+import openpyxl
 
 from django.core.files.storage import default_storage
 import os
@@ -43,6 +44,7 @@ import pandas as pd
 from datetime import datetime
 from django.utils import timezone
 from apiservices.notification import *
+from accounts.views import log_activity
 
 
 def customer_custody_item(request,customer_id):
@@ -381,7 +383,14 @@ class CustomerCustodyList(View):
 
         # Aggregating the product counts for each customer
         aggregated_data = (
-            user_li.values('custody_custom__created_date','custody_custom__customer__customer_name', 'custody_custom__customer__mobile_no', 'custody_custom__customer__building_name', 'custody_custom__customer__routes__route_name')
+            user_li.values(
+                'custody_custom__created_date',
+                'custody_custom__customer__customer_name',
+                'custody_custom__customer__mobile_no',
+                'custody_custom__customer__building_name',
+                'custody_custom__customer__routes__route_name',
+                'custody_custom__customer__custom_id'
+            )
             .annotate(
                 five_gallon_count=Sum('quantity', filter=Q(product__product_name='5 Gallon')),
                 dispenser_count=Sum('quantity', filter=Q(product__product_name='Dispenser')),
@@ -850,7 +859,7 @@ def create_customer_supply(request,pk):
                             reference_no = f"{customer_suply_form_instance.customer.custom_id}"
                         else:
                             reference_no = customer_suply_form_instance.reference_number
-                            
+                        print("invoice_number",invoice_number)    
                         # Create the invoice
                         invoice = Invoice.objects.create(
                             invoice_no=invoice_number,
@@ -864,7 +873,7 @@ def create_customer_supply(request,pk):
                             reference_no=reference_no
                         )
                         
-                        customer_suply_form_instance.invoice_no == invoice.invoice_no
+                        customer_suply_form_instance.invoice_no = invoice.invoice_no
                         customer_suply_form_instance.save()
                         
                         if customer_suply_form_instance.customer.sales_type == "CREDIT":
@@ -1006,6 +1015,10 @@ def edit_customer_supply(request, pk):
     )
     
     if request.method == 'POST':
+        customer_outstanding_coupon = None
+        customer_outstanding_empty_can = None
+        customer_outstanding_amount = None
+        
         customer_supply_form = EditCustomerSupplyForm(request.POST)
         customer_supply_items_formset = SupplyItemsFormset(
             request.POST, request.FILES,
@@ -1029,7 +1042,7 @@ def edit_customer_supply(request, pk):
                         customer=customer_supply_instance.customer
                     ).update(status='pending')
                     
-                    # Handle invoice related deletions
+                     # Handle invoice related deletions
                     handle_invoice_deletion(customer_supply_instance)
                     
                     # Handle outstanding amount adjustments
@@ -1037,6 +1050,10 @@ def edit_customer_supply(request, pk):
                     
                     # Handle coupon deletions and adjustments
                     handle_coupons(customer_supply_instance, five_gallon_qty)
+                    
+                    handle_outstanding_coupon(customer_supply_instance, five_gallon_qty)
+                    
+                    handle_empty_bottle_outstanding(customer_supply_instance, five_gallon_qty)
                     
                     # Update van product stock and empty bottle counts
                     update_van_product_stock(customer_supply_instance, supply_items_instances, five_gallon_qty)
@@ -1064,13 +1081,24 @@ def edit_customer_supply(request, pk):
 
                         if created_date.date() == datetime.today().date():
                             vanstock = VanProductStock.objects.get(created_date=created_date.date(), product=item_data.product, van=van)
+                            
                             if vanstock.stock >= item_data.quantity:
-                                vanstock.stock -= item_data.quantity
-                                vanstock.sold_count += item_data.quantity
-                                vanstock.pending_count += item_data.customer_supply.allocate_bottle_to_pending
-                                if item_data.product.product_name == "5 Gallon":
+                                
+                                if customer_suply_form_instance.customer.sales_type != "FOC" :
+                                    vanstock.sold_count += item_data.quantity
+                                
+                                if customer_suply_form_instance.customer.sales_type == "FOC" :
+                                    vanstock.foc += item_data.quantity
+                                    
+                                if item_data.product.product_name == "5 Gallon" :
                                     total_fivegallon_qty += Decimal(item_data.quantity)
                                     vanstock.empty_can_count += customer_suply_form_instance.collected_empty_bottle
+                                    
+                                    if customer_suply_form_instance.customer.customer_type == "WATCHMAN" :
+                                        vanstock.foc += customer_suply_form_instance.allocate_bottle_to_free
+                                    
+                                vanstock.stock -= item_data.quantity
+                                vanstock.pending_count += item_data.customer_supply.allocate_bottle_to_pending
                                 vanstock.save()
                             else:
                                 response_data = {
@@ -1093,7 +1121,8 @@ def edit_customer_supply(request, pk):
                         
                         elif total_fivegallon_qty > Decimal(customer_suply_form_instance.collected_empty_bottle) :
                             balance_empty_bottle = total_fivegallon_qty - Decimal(customer_suply_form_instance.collected_empty_bottle)
-                            customer_outstanding = CustomerOutstanding.objects.create(
+                            
+                            customer_outstanding_empty_can = CustomerOutstanding.objects.create(
                                 customer=customer_suply_form_instance.customer,
                                 product_type="emptycan",
                                 created_by=request.user.id,
@@ -1102,7 +1131,7 @@ def edit_customer_supply(request, pk):
 
                             outstanding_product = OutstandingProduct.objects.create(
                                 empty_bottle=balance_empty_bottle,
-                                customer_outstanding=customer_outstanding,
+                                customer_outstanding=customer_outstanding_empty_can,
                             )
                             outstanding_instance = {}
 
@@ -1154,7 +1183,7 @@ def edit_customer_supply(request, pk):
                                         # print("total_fivegallon_qty < len(collected_coupon_ids)", total_fivegallon_qty, "------------------------", len(collected_coupon_ids))
                                         balance_coupon = Decimal(total_fivegallon_qty) - Decimal(len(collected_coupon_ids))
                                         
-                                        customer_outstanding = CustomerOutstanding.objects.create(
+                                        customer_outstanding_coupon = CustomerOutstanding.objects.create(
                                             customer=customer_suply_form_instance.customer,
                                             product_type="coupons",
                                             created_by=request.user.id,
@@ -1164,7 +1193,7 @@ def edit_customer_supply(request, pk):
                                         customer_coupon = CustomerCouponStock.objects.filter(customer__pk=customer_suply_form_instance.customer,coupon_method="manual").first()
                                         outstanding_coupon = OutstandingCoupon.objects.create(
                                             count=balance_coupon,
-                                            customer_outstanding=customer_outstanding,
+                                            customer_outstanding=customer_outstanding_coupon,
                                             coupon_type=customer_coupon.coupon_type_id
                                         )
                                         outstanding_instance = ""
@@ -1216,7 +1245,7 @@ def edit_customer_supply(request, pk):
                                 if customer_suply_form_instance.amount_recieved < customer_suply_form_instance.subtotal:
                                     balance_amount = customer_suply_form_instance.subtotal - customer_suply_form_instance.amount_recieved
                                     
-                                    customer_outstanding = CustomerOutstanding.objects.create(
+                                    customer_outstanding_amount = CustomerOutstanding.objects.create(
                                         product_type="amount",
                                         created_by=request.user.id,
                                         customer=customer_suply_form_instance.customer,
@@ -1225,7 +1254,7 @@ def edit_customer_supply(request, pk):
 
                                     outstanding_amount = OutstandingAmount.objects.create(
                                         amount=balance_amount,
-                                        customer_outstanding=customer_outstanding,
+                                        customer_outstanding=customer_outstanding_amount,
                                     )
                                     outstanding_instance = {}
 
@@ -1237,13 +1266,13 @@ def edit_customer_supply(request, pk):
                                         outstanding_instance = CustomerOutstandingReport.objects.create(
                                             product_type='amount',
                                             value=outstanding_amount.amount,
-                                            customer=outstanding_amount.customer_outstanding.customer
+                                            customer=customer_outstanding_amount.customer_outstanding.customer
                                         )
                                         
                                 elif customer_suply_form_instance.amount_recieved > customer_suply_form_instance.subtotal:
                                     balance_amount = customer_suply_form_instance.amount_recieved - customer_suply_form_instance.subtotal
                                     
-                                    customer_outstanding = CustomerOutstanding.objects.create(
+                                    customer_outstanding_amount = CustomerOutstanding.objects.create(
                                         product_type="amount",
                                         created_by=request.user.id,
                                         created_date=created_date,
@@ -1252,7 +1281,7 @@ def edit_customer_supply(request, pk):
 
                                     outstanding_amount = OutstandingAmount.objects.create(
                                         amount=balance_amount,
-                                        customer_outstanding=customer_outstanding,
+                                        customer_outstanding=customer_outstanding_amount,
                                     )
                                     
                                     outstanding_instance=CustomerOutstandingReport.objects.get(customer=customer_suply_form_instance.customer,product_type="amount")
@@ -1299,6 +1328,18 @@ def edit_customer_supply(request, pk):
                         # print(invoice.invoice_no)
                         customer_suply_form_instance.invoice_no = invoice.invoice_no
                         customer_suply_form_instance.save()
+                        
+                        if customer_outstanding_empty_can:
+                            customer_outstanding_empty_can.invoice_no = invoice.invoice_no
+                            customer_outstanding_empty_can.save()
+                        
+                        if customer_outstanding_coupon:
+                            customer_outstanding_coupon.invoice_no = invoice.invoice_no
+                            customer_outstanding_coupon.save()
+
+                        if customer_outstanding_amount:
+                            customer_outstanding_amount.invoice_no = invoice.invoice_no
+                            customer_outstanding_amount.save()
                         
                         if customer_suply_form_instance.customer.sales_type == "CREDIT":
                             invoice.invoice_type = "credit_invoive"
@@ -1591,16 +1632,13 @@ def update_van_product_stock(customer_supply_instance, supply_items_instances, f
             
             # Special handling for "5 Gallon" products
             van_stock = VanProductStock.objects.get(product=item_data.product,created_date=customer_supply_instance.created_date.date(),van__salesman=customer_supply_instance.salesman)
-                
             if van_stock.created_date == datetime.today().date():
                 if item_data.product.product_name == "5 Gallon":
-                    van_stock.empty_can_count += customer_supply_instance.collected_empty_bottle
-                van_stock.stock += item_data.quantity
-                if van_stock.sold_count > 0:
+                    van_stock.empty_can_count -= customer_supply_instance.collected_empty_bottle
+                if van_stock.sold_count > 0 :
                     van_stock.sold_count -= item_data.quantity
-                else:
-                    van_stock.sold_count = 0 
-                van_stock.save()
+                van_stock.stock += item_data.quantity
+            van_stock.save()
 
 #------------------------------REPORT----------------------------------------
 
@@ -1749,7 +1787,7 @@ def custody_issue(request):
                     f'Customer custody issued for {customer}. Bottles issued: {total_bottles_issued}, '
                     f'Quotation deposit amount: {deposit_amount}, Agreement number: {agreement_no}.'
                 )
-                notification(sales_man.pk, "Custody Issued", salesman_body, "Sanawaterfcm")
+                notification(sales_man.pk, "Custody Issued", salesman_body, "Al-Wafawaterfcm")
                 
                 # Customer notification
                 customer_body = (
@@ -1758,7 +1796,7 @@ def custody_issue(request):
                     f'\nQuotation deposit amount: {deposit_amount}, '
                     f'\nAgreement number: {agreement_no}.'
                 )
-                notification(customer.user_id.pk, "Custody Issued", customer_body, "Sanawatercustomer")
+                notification(customer.user_id.pk, "Custody Issued", customer_body, "Al-Wafawatercustomer")
 
             except CustomUser.DoesNotExist:
                 messages.error(request, 'Salesman does not exist.', 'alert-danger')
@@ -1943,17 +1981,18 @@ def delete_count(request, pk):
     return redirect('coupon_count_list')
 
 # @login_required
+
 def customer_outstanding_list(request):
     """
     Customer Outstanding List
     :param request:
-    :return: Customer Outstanding list view
+    :return: Customer Outstanding list view or Excel file
     """
     filter_data = {}
-    route_name = request.GET.get('route_name', '')
     q = request.GET.get('q', '')  
+    route_name = request.GET.get('route_name', '')
     date = request.GET.get('date')
-    
+
     if request.GET.get('product_type'):
         product_type = request.GET.get('product_type')
     else:
@@ -1968,72 +2007,72 @@ def customer_outstanding_list(request):
         date = datetime.today().date()
         filter_data['filter_date'] = date.strftime('%Y-%m-%d')
     
-            
-    # if not start_date:
-    #     start_date = datetime.today().date()
-    # else:
-    #     start_date = datetime.strptime(start_date, '%Y-%m-%d').date()    
-    # filter_data['start_date']=start_date
-
-    route_li = RouteMaster.objects.all()
-    
     outstanding_instances = CustomerOutstanding.objects.filter(created_date__date__lte=date)
 
     if request.GET.get("customer_pk"):
         outstanding_instances = outstanding_instances.filter(customer__pk=request.GET.get("customer_pk"))
+        filter_data['customer_pk'] = request.GET.get("customer_pk")
 
     if route_name:
         outstanding_instances = outstanding_instances.filter(customer__routes__route_name=route_name)
+        filter_data['route_name'] = request.GET.get("route_name")
 
     if q:
         outstanding_instances = outstanding_instances.filter(customer__customer_name__icontains=q)
+        filter_data['q'] = request.GET.get("q")
         
     customer_ids = outstanding_instances.values_list('customer__pk', flat=True).distinct()
 
     instances = Customers.objects.filter(pk__in=customer_ids)
     
-    total_outstanding = OutstandingAmount.objects.filter(
-        customer_outstanding__customer__in=customer_ids,
-        customer_outstanding__created_date__date__lte=date
-    ).aggregate(total=Sum('amount'))['total'] or 0
+    route_li = RouteMaster.objects.all()
 
-    # Calculate total collection amount
-    total_collection = CollectionPayment.objects.filter(
-        customer__in=customer_ids,
-        created_date__date__lte=date
-    ).aggregate(total=Sum('amount_received'))['total'] or 0
+    # Initialize totals
+    total_outstanding_amount = 0
+    total_outstanding_bottles = 0
+    total_outstanding_coupons = 0
 
-    # Compute net total outstanding
-    net_total_outstanding = total_outstanding - total_collection
-    
-    total_outstanding_empty_bottles  = OutstandingProduct.objects.filter(
-        customer_outstanding__customer__in=customer_ids,
-        customer_outstanding__created_date__date__lte=date
-    ).aggregate(total=Sum('empty_bottle'))['total'] or 0
+    # Loop through each customer to calculate totals
+    for customer in instances:
+        outstanding_amount = OutstandingAmount.objects.filter(
+            customer_outstanding__customer__pk=customer.pk, 
+            customer_outstanding__created_date__date__lte=date
+        ).aggregate(total_amount=Sum('amount'))['total_amount'] or 0
+        
+        collection_amount = CollectionPayment.objects.filter(
+            customer__pk=customer.pk, 
+            created_date__date__lte=date
+        ).aggregate(total_amount_received=Sum('amount_received'))['total_amount_received'] or 0
+        
+        outstanding_amount = max(outstanding_amount - collection_amount, 0)
+        total_outstanding_amount += outstanding_amount
+        
+        total_bottles = OutstandingProduct.objects.filter(
+            customer_outstanding__customer__pk=customer.pk, 
+            customer_outstanding__created_date__date__lte=date
+        ).aggregate(total_bottles=Sum('empty_bottle'))['total_bottles'] or 0
+        total_outstanding_bottles += total_bottles
 
-    total_outstanding_coupons = OutstandingCoupon.objects.filter(
-        customer_outstanding__customer__in=customer_ids,
-        customer_outstanding__created_date__date__lte=date
-    ).aggregate(total=Sum('count'))['total'] or 0
-    
-    filter_data = {
-        'filter_date': date.strftime('%Y-%m-%d'),
-        'route_name': route_name,
-        'product_type': product_type,
-    }
+        total_coupons = OutstandingCoupon.objects.filter(
+            customer_outstanding__customer__pk=customer.pk,
+            customer_outstanding__created_date__date__lte=date
+        ).aggregate(total_coupons=Sum('count'))['total_coupons'] or 0
+        total_outstanding_coupons += total_coupons
+
+    # Context for rendering template as usual
     context = {
         'instances': instances,
         'filter_data': filter_data,
-        'route_li':route_li,
+        'route_li': route_li,
         'date': date,
         'customer_pk': request.GET.get("customer_pk"),
-        'net_total_outstanding':net_total_outstanding,
-        'total_outstanding_empty_bottles ': total_outstanding_empty_bottles ,
-        'total_outstanding_coupons': total_outstanding_coupons,
         'page_name': 'Customer Outstanding List',
         'page_title': 'Customer Outstanding List',
         'is_customer_outstanding': True,
         'is_need_datetime_picker': True,
+        'net_total_outstanding': total_outstanding_amount,
+        'total_outstanding_bottles': total_outstanding_bottles,
+        'total_outstanding_coupons': total_outstanding_coupons,
     }
 
     return render(request, 'client_management/customer_outstanding/list.html', context)
@@ -2044,10 +2083,10 @@ def print_customer_outstanding(request):
     Print view for Customer Outstanding List
     """
     filter_data = {}
-    route_name = request.GET.get('route_name', '')
     q = request.GET.get('q', '')  
+    route_name = request.GET.get('route_name', '')
     date = request.GET.get('date')
-    print("date",date)
+
     if request.GET.get('product_type'):
         product_type = request.GET.get('product_type')
     else:
@@ -2055,7 +2094,6 @@ def print_customer_outstanding(request):
         
     filter_data['product_type'] = product_type
     
-            
     if date:
         date = datetime.strptime(date, '%Y-%m-%d').date()
         filter_data['filter_date'] = date.strftime('%Y-%m-%d')
@@ -2063,37 +2101,58 @@ def print_customer_outstanding(request):
         date = datetime.today().date()
         filter_data['filter_date'] = date.strftime('%Y-%m-%d')
     
-    
-    route_li = RouteMaster.objects.all()
-    
     outstanding_instances = CustomerOutstanding.objects.filter(created_date__date__lte=date)
 
     if request.GET.get("customer_pk"):
         outstanding_instances = outstanding_instances.filter(customer__pk=request.GET.get("customer_pk"))
+        filter_data['customer_pk'] = request.GET.get("customer_pk")
 
     if route_name:
         outstanding_instances = outstanding_instances.filter(customer__routes__route_name=route_name)
+        filter_data['route_name'] = request.GET.get("route_name")
 
-    # if q:
-    #     outstanding_instances = outstanding_instances.filter(customer__customer_name__icontains=q)
+    if q:
+        outstanding_instances = outstanding_instances.filter(customer__customer_name__icontains=q)
+        filter_data['q'] = request.GET.get("q")
         
     customer_ids = outstanding_instances.values_list('customer__pk', flat=True).distinct()
 
     instances = Customers.objects.filter(pk__in=customer_ids)
     
-    total_outstanding = OutstandingAmount.objects.filter(
-        customer_outstanding__customer__in=customer_ids,
-        customer_outstanding__created_date__date__lte=date
-    ).aggregate(total=Sum('amount'))['total'] or 0
+    route_li = RouteMaster.objects.all()
 
-    # Calculate total collection amount
-    total_collection = CollectionPayment.objects.filter(
-        customer__in=customer_ids,
-        created_date__date__lte=date
-    ).aggregate(total=Sum('amount_received'))['total'] or 0
+    # Initialize totals
+    total_outstanding_amount = 0
+    total_outstanding_bottles = 0
+    total_outstanding_coupons = 0
 
-    # Compute net total outstanding
-    net_total_outstanding = total_outstanding - total_collection
+    # Loop through each customer to calculate totals
+    for customer in instances:
+        outstanding_amount = OutstandingAmount.objects.filter(
+            customer_outstanding__customer__pk=customer.pk, 
+            customer_outstanding__created_date__date__lte=date
+        ).aggregate(total_amount=Sum('amount'))['total_amount'] or 0
+        
+        collection_amount = CollectionPayment.objects.filter(
+            customer__pk=customer.pk, 
+            created_date__date__lte=date
+        ).aggregate(total_amount_received=Sum('amount_received'))['total_amount_received'] or 0
+        
+        outstanding_amount = max(outstanding_amount - collection_amount, 0)
+        total_outstanding_amount += outstanding_amount
+        
+        total_bottles = OutstandingProduct.objects.filter(
+            customer_outstanding__customer__pk=customer.pk, 
+            customer_outstanding__created_date__date__lte=date
+        ).aggregate(total_bottles=Sum('empty_bottle'))['total_bottles'] or 0
+        total_outstanding_bottles += total_bottles
+
+        total_coupons = OutstandingCoupon.objects.filter(
+            customer_outstanding__customer__pk=customer.pk,
+            customer_outstanding__created_date__date__lte=date
+        ).aggregate(total_coupons=Sum('count'))['total_coupons'] or 0
+        total_outstanding_coupons += total_coupons
+        
     filter_data = {
         'filter_date': date.strftime('%Y-%m-%d'),
         'route_name': route_name,
@@ -2105,7 +2164,7 @@ def print_customer_outstanding(request):
         'route_li':route_li,
         'date': date,
         'customer_pk': request.GET.get("customer_pk"),
-        'net_total_outstanding':net_total_outstanding,
+        'net_total_outstanding':total_outstanding_amount,
         'is_customer_outstanding': True,
         'is_need_datetime_picker': True,
         'filter_date': date.strftime('%d-%m-%Y'),
@@ -2264,7 +2323,7 @@ def customer_outstanding_details(request,customer_pk):
 
     return render(request, 'client_management/customer_outstanding/info_list.html', context)
 
-# @login_required
+@login_required
 def outstanding_list(request):
     """
     Customer Outstanding  List
@@ -2278,6 +2337,7 @@ def outstanding_list(request):
     date = request.GET.get('date')
     route_filter = request.GET.get('route_name')
     sales_type_filter = request.GET.get('sales_type')
+    product_type_filter = request.GET.get('product_type')  
 
     
     if date:
@@ -2289,83 +2349,22 @@ def outstanding_list(request):
         filter_data['filter_date'] = date.strftime('%Y-%m-%d')
     
     if route_filter:
-            instances = instances.filter(customer__routes__route_name=route_filter)
+        instances = instances.filter(customer__routes__route_name=route_filter)
+        filter_data['route_name'] = route_filter
     route_li = RouteMaster.objects.all()
     
     if sales_type_filter:
         instances = instances.filter(customer__sales_type=sales_type_filter)
         filter_data['sales_type'] = sales_type_filter
     sales_type_li = Customers.objects.values_list('sales_type', flat=True).distinct()
-
-    # if query:
-
-    #     instances = instances.filter(
-    #         Q(product_type__icontains=query) |
-    #         Q(invoice_no__icontains=query) 
-    #     )
-    #     title = "Outstanding List - %s" % query
-    #     filter_data['q'] = query
-    # Calculate the total sum of outstanding counts
-    total_outstanding_count = sum(item.get_outstanding_count() for item in instances)
     
-    # Prepare filter_data
-    filter_data = {
-        'filter_date': date.strftime('%Y-%m-%d'),
-        'route_name': route_filter,
-        'sales_type': sales_type_filter,
-        # 'q': query,
-    }
-    
-    context = {
-        'instances': instances,
-        'page_name' : 'Customer Outstanding List',
-        'page_title' : 'Customer Outstanding List',
-        'customer_pk': request.GET.get("customer_pk"),
-        
-        'is_customer_outstanding': True,
-        'is_need_datetime_picker': True,
-        'filter_data': filter_data,
-        'route_li':route_li,
-        'sales_type_li': sales_type_li,
-        'total_outstanding_count': total_outstanding_count,  
+    # Product type filter
+    if product_type_filter:
+        instances = instances.filter(product_type=product_type_filter)
+        filter_data['product_type'] = product_type_filter
 
-
-    }
-
-    return render(request, 'client_management/customer_outstanding/outstanding_list.html', context)
-
-def print_outstanding_report(request):
-    """
-    This function generates a printable report based on the filters applied.
-    """
-    filter_data = {}
-    instances = CustomerOutstanding.objects.all().order_by('-created_date')
-    
-    query = request.GET.get("q")
-    date = request.GET.get('date')
-    route_filter = request.GET.get('route_name')
-    sales_type_filter = request.GET.get('sales_type')
-
-    
-    if date:
-        date = datetime.strptime(date, '%Y-%m-%d').date()
-        filter_data['filter_date'] = date.strftime('%Y-%m-%d')
-
-    else:
-        date = datetime.today().date()
-        filter_data['filter_date'] = date.strftime('%Y-%m-%d')
-    
-    if route_filter:
-            instances = instances.filter(customer__routes__route_name=route_filter)
-    route_li = RouteMaster.objects.all()
-    
-    if sales_type_filter:
-        instances = instances.filter(customer__sales_type=sales_type_filter)
-        filter_data['sales_type'] = sales_type_filter
-    sales_type_li = Customers.objects.values_list('sales_type', flat=True).distinct()
 
     if query:
-
         instances = instances.filter(
             Q(product_type__icontains=query) |
             Q(invoice_no__icontains=query) 
@@ -2373,31 +2372,98 @@ def print_outstanding_report(request):
         title = "Outstanding List - %s" % query
         filter_data['q'] = query
     # Calculate the total sum of outstanding counts
-    total_outstanding_count = sum(item.get_outstanding_count() for item in instances)
-    
-    # Prepare filter_data
-    filter_data = {
-        'filter_date': date.strftime('%Y-%m-%d'),
-        'route_name': route_filter,
-        'sales_type': sales_type_filter,
-        'q': query,
-    }
+    total_outstanding_count = sum([item.get_outstanding_count() for item in instances])
 
+    # Log user activity
+    log_activity(
+        created_by=request.user if request.user.is_authenticated else None,
+        description=f"Viewed outstanding list with filters: date={date},  Route: {route_filter}, Sales Type: {sales_type_filter}, "
+                f"Product Type: {product_type_filter}, Query: {query}"
+    )
     context = {
-        'instances': instances,
-        'total_outstanding_count': total_outstanding_count,
-        'filter_date': date,
         'instances': instances,
         'page_name' : 'Customer Outstanding List',
         'page_title' : 'Customer Outstanding List',
         'customer_pk': request.GET.get("customer_pk"),
+        'date': date,
         
         'is_customer_outstanding': True,
         'is_need_datetime_picker': True,
         'filter_data': filter_data,
         'route_li':route_li,
         'sales_type_li': sales_type_li,
-         
+        'total_outstanding_count': total_outstanding_count,  
+        'product_types': dict(PRODUCT_TYPES)
+    }
+
+    return render(request, 'client_management/customer_outstanding/outstanding_list.html', context)
+def print_outstanding_report(request):
+    """
+    Print Customer Outstanding Report
+    :param request:
+    :return: A printable view of Customer Outstanding list
+    """
+    filter_data = {}
+    instances = CustomerOutstanding.objects.all().order_by('-created_date')
+    
+    query = request.GET.get("q")
+    date = request.GET.get('date')
+    route_filter = request.GET.get('route_name')
+    
+    sales_type_filter = request.GET.get('sales_type')
+    product_type_filter = request.GET.get('product_type')
+
+    if date:
+        date = datetime.strptime(date, '%Y-%m-%d').date()
+        filter_data['filter_date'] = date.strftime('%Y-%m-%d')
+    else:
+        date = datetime.today().date()
+        filter_data['filter_date'] = date.strftime('%Y-%m-%d')
+    
+    # Filter by route
+    if route_filter:
+        instances = instances.filter(customer__routes__route_name=route_filter)
+        filter_data['route_name'] = route_filter
+
+    route_li = RouteMaster.objects.all()
+    
+    # Filter by sales type
+    if sales_type_filter:
+        instances = instances.filter(customer__sales_type=sales_type_filter)
+        filter_data['sales_type'] = sales_type_filter
+    sales_type_li = Customers.objects.values_list('sales_type', flat=True).distinct()
+    
+    # Filter by product type
+    if product_type_filter:
+        instances = instances.filter(product_type=product_type_filter)
+        filter_data['product_type'] = product_type_filter
+
+    # Search functionality
+    if query:
+        instances = instances.filter(
+            Q(product_type__icontains=query) |
+            Q(invoice_no__icontains=query)
+        )
+        filter_data['q'] = query
+
+    # Calculate total outstanding count
+    total_outstanding_count = sum([item.get_outstanding_count() for item in instances])
+    
+     # Log user activity
+    log_activity(
+        created_by=request.user if request.user.is_authenticated else None,
+        description=f"Viewed outstanding list Print with filters: date={date},  Route: {route_filter}, Sales Type: {sales_type_filter}, "
+                f"Product Type: {product_type_filter}, Query: {query}"
+    )
+    
+    context = {
+        'instances': instances,
+        'date': date,
+        'route_li': route_li,
+        'sales_type_li': sales_type_li,
+        'filter_data': filter_data,
+        'total_outstanding_count': total_outstanding_count,
+        'product_types': dict(PRODUCT_TYPES)
     }
 
     return render(request, 'client_management/customer_outstanding/print_outstanding_report.html', context)
@@ -3165,3 +3231,170 @@ def edit_customer_outstanding(request, outstanding_pk):
         }
 
         return render(request, 'client_management/customer_outstanding/edit.html', context)
+    
+    
+def ageing_report_view(request):
+    today = timezone.now().date()
+    outstanding_report = []
+
+    salesmen = Customers.objects.filter(is_active=True).select_related('routes', 'sales_staff')
+    
+    for salesman in salesmen:
+        less_than_30_date = today - timedelta(days=30)
+        less_than_60_date = today - timedelta(days=60)
+        less_than_90_date = today - timedelta(days=90)
+        less_than_150_date = today - timedelta(days=150)
+        less_than_365_date = today - timedelta(days=365)
+        
+        def aggregate_outstanding(filter_q):
+            customer_outstandings = CustomerOutstanding.objects.filter(
+                filter_q,
+                customer=salesman
+            )
+            
+            amount_sum = OutstandingAmount.objects.filter(
+                customer_outstanding__in=customer_outstandings
+            ).aggregate(total=Sum('amount'))['total'] or Decimal('0.00')
+            
+            coupon_sum = OutstandingCoupon.objects.filter(
+                customer_outstanding__in=customer_outstandings
+            ).aggregate(total=Sum('count'))['total'] or 0
+            
+            product_sum = OutstandingProduct.objects.filter(
+                customer_outstanding__in=customer_outstandings
+            ).aggregate(total=Sum('empty_bottle'))['total'] or 0
+            
+            coupon_sum_decimal = Decimal(coupon_sum)
+            product_sum_decimal = Decimal(product_sum)
+            
+            return amount_sum + coupon_sum_decimal + product_sum_decimal
+        
+        less_than_30 = aggregate_outstanding(Q(created_date__gte=less_than_30_date))
+        days_31_60 = aggregate_outstanding(Q(created_date__lt=less_than_30_date) & Q(created_date__gte=less_than_60_date))
+        days_61_90 = aggregate_outstanding(Q(created_date__lt=less_than_60_date) & Q(created_date__gte=less_than_90_date))
+        days_91_150 = aggregate_outstanding(Q(created_date__lt=less_than_90_date) & Q(created_date__gte=less_than_150_date))
+        days_151_365 = aggregate_outstanding(Q(created_date__lt=less_than_150_date) & Q(created_date__gte=less_than_365_date))
+        more_than_365 = aggregate_outstanding(Q(created_date__lt=less_than_365_date))
+        
+        grand_total = (
+            less_than_30 + 
+            days_31_60 + 
+            days_61_90 + 
+            days_91_150 + 
+            days_151_365 + 
+            more_than_365
+        )
+        
+        outstanding_report.append({
+            'salesman': salesman,
+            'route': salesman.routes,
+            'less_than_30': less_than_30,
+            'days_31_60': days_31_60,
+            'days_61_90': days_61_90,
+            'days_91_150': days_91_150,
+            'days_151_365': days_151_365,
+            'more_than_365': more_than_365,
+            'grand_total': grand_total,
+        })
+    
+    return render(request, 'client_management/ageing_report.html', {'outstanding_report': outstanding_report})
+
+
+def customer_transaction_list(request):
+    """
+    Customer Transaction List
+    :param request:
+    :return: Customer Transaction list view
+    """
+    filter_data = {}
+    q = request.GET.get('q', '')
+    date = request.GET.get('date')
+
+    # Handle date filtering
+    if date:
+        date = datetime.strptime(date, '%Y-%m-%d').date()
+        filter_data['filter_date'] = date.strftime('%Y-%m-%d')
+    else:
+        date = None  # No date provided
+
+    # Fetch all routes
+    route_li = RouteMaster.objects.all()
+
+    # Fetch customer primary key from request
+    customer_pk = request.GET.get("customer_pk")
+
+# Initialize querysets for collection payments and invoices related to the customer
+    collection_payments = CollectionItems.objects.filter(
+        collection_payment__customer__pk=customer_pk
+    ).order_by('-collection_payment__created_date')
+    # print("collection_payments",collection_payments)
+
+    invoice_items = InvoiceItems.objects.filter(
+        invoice__customer__pk=customer_pk
+    ).order_by('-invoice__created_date')
+    # print("invoice_items",invoice_items)
+
+    outstanding_instances = CustomerOutstanding.objects.filter(
+        customer__pk=customer_pk
+    ).order_by('-created_date')
+    # print("outstanding_instances",outstanding_instances)
+
+    coupon_recharge = CustomerCouponItems.objects.filter(
+        customer_coupon__customer__pk=customer_pk
+    ).order_by('-customer_coupon__created_date')  
+    # print("coupon_recharge",coupon_recharge)
+    
+    customer_supply = CustomerSupplyItems.objects.filter(
+        customer_supply__customer__pk=customer_pk
+    ).order_by('-customer_supply__created_date')
+    # print("customer_supply",customer_supply)
+
+    customer_orders_items = CustomerOrdersItems.objects.filter(
+        customer_order__customer__pk=customer_pk
+    ).order_by('-customer_order__created_date')
+    # print("customer_orders_items",customer_orders_items)
+
+    # Apply date filter only if a date is provided
+    if date:
+        collection_payments = collection_payments.filter(collection_payment__created_date__date__gte=date)
+        # print("filtered_collection_payments",collection_payments)
+        invoice_items = invoice_items.filter(invoice__created_date__date__gte=date)
+        # print("filtered_invoice_items",invoice_items)
+
+        outstanding_instances = outstanding_instances.filter(created_date__date__gte=date)
+        # print("filtered_outstanding_instances",outstanding_instances)
+        
+        coupon_recharge = coupon_recharge.filter(customer_coupon__created_date__date__gte=date)
+        # print("filtered_coupon_recharge",coupon_recharge)
+
+        customer_supply = customer_supply.filter(customer_supply__created_date__date__gte=date)
+        print("filtered_customer_supply",customer_supply)
+
+        customer_orders_items = customer_orders_items.filter(customer_order__created_date__date__gte=date)
+        # print("filtered_customer_orders_items",customer_orders_items)
+
+
+    context = {
+        'filter_data': filter_data,
+        'route_li': route_li,
+        'date': date,
+        'customer_pk': customer_pk,
+        'collection_payments': collection_payments,
+        'invoice_items': invoice_items,
+        'outstanding_instances': outstanding_instances,
+        'coupon_recharge': coupon_recharge,
+        'customer_supply': customer_supply,
+        'customer_orders_items': customer_orders_items,
+        'page_name': 'Customer Transaction List',
+        'page_title': 'Customer Transaction List',
+        'is_customer_transaction': True,
+        'is_need_datetime_picker': True,
+    }
+
+    log_activity(
+        created_by=request.user if request.user.is_authenticated else None,
+        description="Viewed the customer transaction list with filters applied."
+    )
+    
+    return render(request, 'client_management/customer_transaction/customer_transaction_list.html', context)
+

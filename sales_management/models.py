@@ -1,9 +1,10 @@
 from django.db import models
 from django.db import models
 from django.db.models import Sum,DecimalField
+from django.core.exceptions import ObjectDoesNotExist
 
 from accounts.models import Customers, CustomUser
-from client_management.models import CustomerSupply
+from client_management.models import CustomerSupply,CustomerCoupon
 from invoice_management.models import Invoice
 from master.models import RouteMaster
 from coupon_management.models  import Coupon, CouponType
@@ -234,3 +235,25 @@ class SalesmanSpendingLog(models.Model):
 
     def __str__(self):
         return f"{self.customer} - {self.created_date}"
+
+
+class Receipt(models.Model):
+    TRANSACTION_TYPE_CHOICES = (
+        ('supply', 'supply'),
+        ('collection', 'collection'),
+        ('coupon_rechange', 'coupon rechange')
+    )
+    transaction_type = models.CharField(max_length=100, choices=TRANSACTION_TYPE_CHOICES, null=True, blank=True)
+    instance_id = models.CharField(max_length=200)
+    amount_received = models.DecimalField(default=0, max_digits=10, decimal_places=2)
+    receipt_number = models.CharField(max_length=100, unique=True, null=True, blank=True)
+    invoice_number = models.CharField(max_length=500) 
+    customer = models.ForeignKey('accounts.Customers', on_delete=models.CASCADE)
+    
+    created_date = models.DateTimeField(auto_now_add=True)
+    
+    class Meta:
+        ordering = ('-instance_id',)
+
+    def __str__(self):
+        return f"Receipt {self.receipt_number} for Instance {self.instance_id}"

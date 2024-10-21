@@ -53,7 +53,7 @@ from rest_framework.permissions import IsAuthenticated
 from accounts.models import *
 from master.models import *
 from product.models import *
-from sales_management.models import CollectionItems, CollectionPayment, SalesmanSpendingLog
+from sales_management.models import *
 from van_management.models import *
 from customer_care.models import *
 from order.models import *
@@ -2047,17 +2047,17 @@ class Staff_New_Order(APIView):
 
                 order_number = f"{new_order_number}"
                 order_date = request.GET.get('order_date')
-                delivery_date = request.data.get('delivery_date')
+                # delivery_date = request.data.get('delivery_date')
                 
                 if order_date:
                     order_date = datetime.strptime(order_date, '%Y-%m-%d').date()
                 else:
                     order_date = datetime.today().date()
                 
-                if delivery_date:
-                    delivery_date = datetime.strptime(delivery_date, '%Y-%m-%d').date()
-                else:
-                    delivery_date = datetime.today().date()
+                # if delivery_date:
+                #     delivery_date = datetime.strptime(delivery_date, '%Y-%m-%d').date()
+                # else:
+                #     delivery_date = datetime.today().date()
 
                 serializer_1 = self.staff_order_serializer(data=request.data)
                 if serializer_1.is_valid(raise_exception=True):
@@ -2065,7 +2065,7 @@ class Staff_New_Order(APIView):
                         created_by=request.user.id,
                         order_number=order_number.upper(),
                         order_date=order_date,
-                        delivery_date=delivery_date
+                        # delivery_date=delivery_date
                     )
                     staff_order = order_data.staff_order_id
 
@@ -2397,18 +2397,34 @@ class Myclient_API(APIView):
 
     def post(self, request, *args, **kwargs):
         try:
-            userid = request.data["id"]
-            #81
+            userid = request.data.get("id")
+            route_id = request.data.get("route_id")
+
+            # Fetch the staff user
             staff = CustomUser.objects.get(id=userid)
+
+            # Fetch van details where the staff is either a driver or a salesman
             vans = Van.objects.filter(Q(driver=staff) | Q(salesman=staff)).first()
 
             if vans is not None:
-                van = Van.objects.get(van_id=vans.pk)
-                assign_routes = Van_Routes.objects.filter(van=van).values_list('routes', flat=True)
-                routes_list = RouteMaster.objects.filter(route_id__in = assign_routes).values_list('route_id',flat=True)
-                customer_list = Customers.objects.filter(routes__in=routes_list)
+                if not route_id:
+                    van = Van.objects.get(van_id=vans.pk)
+                    assign_routes = Van_Routes.objects.filter(van=van).values_list('routes', flat=True)
+                    routes_list = RouteMaster.objects.filter(route_id__in=assign_routes).values_list('route_id', flat=True)
+
+                    customer_list = Customers.objects.filter(routes__pk__in=routes_list)
+                else:
+                    customer_list = Customers.objects.filter(routes__pk=route_id)
+
+                # Serialize the filtered customers
                 serializer = self.serializer_class(customer_list, many=True)
+
                 return Response(serializer.data)
+
+            return Response({'status': False, 'message': 'No van assigned to the user'})
+
+        except CustomUser.DoesNotExist:
+            return Response({'status': False, 'message': 'User not found'})
         except Exception as e:
             return Response({'status': False, 'message': str(e)})
 
@@ -2713,6 +2729,37 @@ class CustomerCouponRecharge(APIView):
                         salesman=request.user,
                         amount=invoice_instance.amout_recieved,
                     ) 
+                    
+                    # Generate receipt number
+                    try:
+                        receipt_last_no = Receipt.objects.all().latest('created_date')
+                        last_receipt_number = receipt_last_no.receipt_number
+
+                        # Validate the format of the last receipt number
+                        parts = last_receipt_number.split('-')
+                        if len(parts) == 3 and parts[0] == 'RCT' and parts[1] == date_part:
+                            prefix, old_date_part, number_part = parts
+                            new_number_part = int(number_part) + 1
+                            receipt_number = f'{prefix}-{date_part}-{new_number_part:04d}'
+                        else:
+                            # If the last receipt number is not in the expected format, generate a new one
+                            random_part = str(random.randint(1000, 9999))
+                            receipt_number = f'RCT-{date_part}-{random_part}'
+                    except Receipt.DoesNotExist:
+                        random_part = str(random.randint(1000, 9999))
+                        receipt_number = f'RCT-{date_part}-{random_part}'
+
+                    invoice_numbers = []
+                    invoice_numbers.append(invoice_instance.invoice_no)
+                    
+                    receipt = Receipt.objects.create(
+                        transaction_type='coupon_rechange',
+                        instance_id=str(customer_coupon.id),  
+                        amount_received=customer_coupon.amount_recieved,
+                        receipt_number=receipt_number,
+                        invoice_number=",".join(invoice_numbers),
+                        customer=customer_coupon.customer
+                    )
 
                 # Create ChequeCouponPayment instanceno_of_leaflets
                 cheque_payment_instance = None
@@ -3092,7 +3139,9 @@ class create_customer_supply(APIView):
         allocate_bottle_to_pending = request.data.get('allocate_bottle_to_pending')
         allocate_bottle_to_custody = request.data.get('allocate_bottle_to_custody')
         allocate_bottle_to_paid = request.data.get('allocate_bottle_to_paid')
+        allocate_bottle_to_free = int(request.data.get('allocate_bottle_to_free') or 0)
         reference_no = request.data.get('reference_number')
+        date_part = timezone.now().strftime('%Y%m%d')
         
         customer_outstanding_coupon = None
         customer_outstanding_empty_can = None
@@ -3115,6 +3164,7 @@ class create_customer_supply(APIView):
                     allocate_bottle_to_pending=allocate_bottle_to_pending,
                     allocate_bottle_to_custody=allocate_bottle_to_custody,
                     allocate_bottle_to_paid=allocate_bottle_to_paid,
+                    allocate_bottle_to_free=allocate_bottle_to_free,
                     created_by=request.user.id,
                     created_date=datetime.today()
                 )
@@ -3138,11 +3188,16 @@ class create_customer_supply(APIView):
                         vanstock.stock -= suply_items.quantity
                         if customer_supply.customer.sales_type != "FOC" :
                             vanstock.sold_count += suply_items.quantity
+                        
                         if customer_supply.customer.sales_type == "FOC" :
                             vanstock.foc += suply_items.quantity
+                        
                         if suply_items.product.product_name == "5 Gallon" :
                             total_fivegallon_qty += Decimal(suply_items.quantity)
                             vanstock.empty_can_count += collected_empty_bottle
+                            
+                            if customer_supply.customer.customer_type == "WATCHMAN" :
+                                vanstock.foc += customer_supply.allocate_bottle_to_free
                         vanstock.save()
                         
                     else:
@@ -3447,9 +3502,27 @@ class create_customer_supply(APIView):
                             # pass
                     
                     # if customer_supply.customer.sales_type == "CASH" or customer_supply.customer.sales_type == "CREDIT":
+                    # Generate a unique receipt number
+                    try:
+                        reciept_last_no = Receipt.objects.all().latest('created_date')
+                        last_reciept_number = reciept_last_no.receipt_number
+
+                        # Validate the format of the last invoice number
+                        parts = last_reciept_number.split('-')
+                        if len(parts) == 3 and parts[0] == 'RCT' and parts[1] == date_part:
+                            prefix, old_date_part, number_part = parts
+                            r_new_number_part = int(number_part) + 1
+                            receipt_number = f'{prefix}-{date_part}-{r_new_number_part:04d}'
+                        else:
+                            # If the last invoice number is not in the expected format, generate a new one
+                            random_part = str(random.randint(1000, 9999))
+                            receipt_number = f'RCT-{date_part}-{random_part}'
+                    except Receipt.DoesNotExist:
+                        random_part = str(random.randint(1000, 9999))
+                        receipt_number = f'RCT-{date_part}-{random_part}'
+                    
                     invoice_generated = True
                     
-                    date_part = timezone.now().strftime('%Y%m%d')
                     try:
                         invoice_last_no = Invoice.objects.filter(is_deleted=False).latest('created_date')
                         last_invoice_number = invoice_last_no.invoice_no
@@ -3543,7 +3616,29 @@ class create_customer_supply(APIView):
                         assign_this_to=customer_supply.salesman_id,
                         customer=customer_supply.customer_id
                         ).update(status='supplied')
+                    
+                    invoice_numbers = []
+                    invoice_numbers.append(invoice.invoice_no)
+                    
+                    receipt = Receipt.objects.create(
+                        transaction_type="supply",
+                        instance_id=str(customer_supply.id),  
+                        amount_received=customer_supply.amount_recieved,
+                        receipt_number=receipt_number,
+                        customer=customer_supply.customer,
+                        invoice_number=",".join(invoice_numbers)
+                    )
+                else:
+                    if customer_supply.customer.eligible_foc > 0:
+                        foc_count = min(customer_supply.customer.eligible_foc, suply_items.quantity)
+                        sold_count = suply_items.quantity - foc_count
+                        customer_supply.customer.eligible_foc -= foc_count  
+                        customer_supply.customer.save()
+                    else:
+                        foc_count = 0
+                        sold_count = suply_items.quantity
 
+                    
                 if invoice_generated:
                     response_data = {
                         "status": "true",
@@ -4634,7 +4729,6 @@ class DeleteCouponCount(APIView):
         customer_coupon_stock.delete()
         return Response({'message': 'Coupon count deleted successfully!', 'customer_pk': str(customer_pk)}, status=status.HTTP_200_OK)
 
-
 class customer_outstanding(APIView):
     authentication_classes = [BasicAuthentication]
     permission_classes = [IsAuthenticated]
@@ -4701,6 +4795,7 @@ class customer_outstanding(APIView):
             "total_emptycan": total_outstanding_bottles,
             'message': 'success'
         })
+
 
 class CustomerCouponListAPI(APIView):
     authentication_classes = [BasicAuthentication]
@@ -4855,6 +4950,7 @@ class AddCollectionPayment(APIView):
         amount_received = Decimal(request.data.get("amount_received"))
         invoice_ids = request.data.get("invoice_ids")
         customer_id = request.data.get("customer_id")
+        date_part = timezone.now().strftime('%Y%m%d')
         
         # Retrieve customer object
         try:
@@ -4863,12 +4959,21 @@ class AddCollectionPayment(APIView):
             return Response({"message": "Customer does not exist."}, status=status.HTTP_404_NOT_FOUND)
         
         # Generate a unique receipt number
-        date_part = timezone.now().strftime('%Y%m%d')
-        random_part = str(random.randint(1000, 9999))
-        receipt_number = f'RCT-{date_part}-{random_part}'
-        
-        # Ensure the receipt number is unique
-        while CollectionPayment.objects.filter(receipt_number=receipt_number).exists():
+        try:
+            reciept_last_no = Receipt.objects.all().latest('created_date')
+            last_reciept_number = reciept_last_no.receipt_number
+
+            # Validate the format of the last invoice number
+            parts = last_reciept_number.split('-')
+            if len(parts) == 3 and parts[0] == 'RCT' and parts[1] == date_part:
+                prefix, old_date_part, number_part = parts
+                r_new_number_part = int(number_part) + 1
+                receipt_number = f'{prefix}-{date_part}-{r_new_number_part:04d}'
+            else:
+                # If the last invoice number is not in the expected format, generate a new one
+                random_part = str(random.randint(1000, 9999))
+                receipt_number = f'RCT-{date_part}-{random_part}'
+        except Receipt.DoesNotExist:
             random_part = str(random.randint(1000, 9999))
             receipt_number = f'RCT-{date_part}-{random_part}'
             
@@ -4882,15 +4987,17 @@ class AddCollectionPayment(APIView):
                 amount_received=amount_received,
                 receipt_number=receipt_number,
             )
-            
+           
             remaining_amount = amount_received
+            
+            invoice_numbers = []
             # Iterate over invoice IDs
             for invoice_id in invoice_ids:
                 try:
                     invoice = Invoice.objects.get(pk=invoice_id, customer=customer)
                 except Invoice.DoesNotExist:
                     continue
-                
+                invoice_numbers.append(invoice.invoice_no)
                 # Calculate the amount due for this invoice
                 due_amount = invoice.amout_total - invoice.amout_recieved
                 
@@ -4926,7 +5033,15 @@ class AddCollectionPayment(APIView):
                 else:
                     # Break the loop if there is no remaining amount or the current invoice is fully paid
                     break
-            
+            receipt = Receipt.objects.create(
+                transaction_type="collection",
+                instance_id=str(collection_payment.id),  # Correctly assign the ID as a string
+                amount_received=amount_received,
+                receipt_number=receipt_number,
+                customer=customer,
+                invoice_number=",".join(invoice_numbers)  # Join the invoice numbers into a comma-separated string
+            )
+
             # If there is remaining amount after paying all invoices, adjust it with the outstanding balance
             if remaining_amount != Decimal('0'):
                 negatieve_remaining_amount = -remaining_amount
@@ -4957,7 +5072,6 @@ class AddCollectionPayment(APIView):
                         value=negatieve_remaining_amount,
                     )
                 
-                date_part = timezone.now().strftime('%Y%m%d')
                 try:
                     invoice_last_no = Invoice.objects.filter(is_deleted=False).latest('created_date')
                     last_invoice_number = invoice_last_no.invoice_no
@@ -9500,8 +9614,16 @@ class SalesmanListAPIView(APIView):
     """
 
     def get(self, request):
-        # Filter for salesmen
-        salesmen = CustomUser.objects.filter(user_type='Salesman')
+        route_id = request.data.get('route_id')
+
+        if not route_id:
+            return Response({"error": "route_id is required"}, status=status.HTTP_400_BAD_REQUEST)
+
+        # Get all vans that have the given route_id
+        vans_route = Van_Routes.objects.filter(routes__route_id=route_id).values_list('van', flat=True)
+
+        # Get salesmen associated with those vans
+        salesmen = CustomUser.objects.filter(user_type='Salesman', salesman_van__van_id__in=vans_route)
 
         # Serialize the salesmen data
         serializer = SalesmanSerializer(salesmen, many=True)

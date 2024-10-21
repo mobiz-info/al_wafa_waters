@@ -8,10 +8,10 @@
     <meta charset="UTF-8">
     <meta name='viewport' content='width=device-width, initial-scale=1.0'>
     <meta http-equiv="X-UA-Compatible" content="IE=edge">
-    <title>Sana Water</title>
-    <meta name="Description" content="Sana water admin dashboard">
+    <title>Al-Wafa Water</title>
+    <meta name="Description" content="Al-Wafa water admin dashboard">
     <meta name="Author" content="Mobiz Technologies">
-	<meta name="keywords" cSanant="Sana water admin dashboard">
+	<meta name="keywords" cAl-Wafant="Al-Wafa water admin dashboard">
 
     <!-- Favicon -->
     <link rel="icon" href="{%static 'images/brand-logos/desktop-logos.png'%}" type="image/x-icon">
@@ -1343,6 +1343,9 @@
                                 <li class="slide">
                                     <a href="{% url 'customer_rate_history' %}" class="side-menu__item">Customer Rate History</a>
                                 </li> 
+                                <li class="slide">
+                                    <a href="{% url 'ageing_report' %}" class="side-menu__item">Ageing Report</a>
+                                </li>
                             </ul>
                         </li>
                         <li class="slide__category"><span class="category-name">Coupon Management</span></li>
@@ -1475,6 +1478,12 @@
                         </li>
                         <!-- End::slide -->
                     </ul>
+                    <a href="{% url 'receipt_list' %}" class="side-menu__item">
+                        <span class=" side-menu__icon">
+                            <i class='bx bx-desktop'></i>
+                        </span>
+                        <span class="side-menu__label">Receipt</span>
+                    </a>
                     <a href="{% url 'invoice:invoice_list' %}">
                         <div class="slide-left" id="slide-left" >
                         <svg xmlns="http://www.w3.org/2000/svg" fill="#7b8191" width="24" height="24" viewBox="0 0 24 24"> <path d="M13.293 6.293 7.586 12l5.707 5.707 1.414-1.414L10.414 12l4.293-4.293z"></path> </svg>
@@ -1596,7 +1605,7 @@
        <footer class="footer mt-auto py-3 bg-white text-center">
            <div class="container">
                <span class="text-muted"> Copyright © <span id="year"></span> <a
-                       href="javascript:void(0);" class="text-dark fSanamibold">Sana Waters</a>.
+                       href="javascript:void(0);" class="text-dark fAl-Wafamibold">Al-Wafa Waters</a>.
                    powered by <a href="https://www.mobiztechnologies.com/">
                        <span class="fw-semibold text-primary text-decoration-underline">Mobiz Technologies</span>
                    </a> All

@@ -128,6 +128,21 @@
                             <!--                                <small class="form-text text-muted">Select Category.</small>-->
                         </div>
                     </div>
+                  
+                    <div class="col-md-6">
+                        <div class="form-group required">
+                            <label class='control-label'>5G Count Limit</label>
+                            {{ form.five_g_count_limit }}
+                            <span style="color: red;">{{ form.five_g_count_limit.errors }}</span>
+                        </div>
+                    </div>
+                    <div class="col-md-6">
+                        <div class="form-group required">
+                            <label class='control-label'>Eligible FOC</label>
+                            {{ form.eligible_foc }}
+                            <span style="color: red;">{{ form.eligible_foc.errors }}</span>
+                        </div>
+                    </div>
                     <div class="col-md-6">
                         <div class="form-group required">
                             <label class='control-label'>Rate</label>

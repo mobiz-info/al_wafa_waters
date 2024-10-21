@@ -545,16 +545,18 @@ class Inactive_Customer_List(View):
                 return False
 
         # Annotate each customer with the number of days since last supply and vacation status
+        filtered_customers = []
         for customer in inactive_customers:
             customer.days_since_last_supply = days_since_last_supply(customer.pk)
-            customer.on_vacation = is_on_vacation(customer.pk)
-
+            if customer.days_since_last_supply > 0:  # Exclude customers with days_since_last_supply == 0
+                customer.on_vacation = is_on_vacation(customer.pk)
+                filtered_customers.append(customer)
         log_activity(
             created_by=request.user,  
             description=f"Viewed inactive customer list with filters: {filter_data}"
         )
         context = {
-            'inactive_customers': inactive_customers,
+            'inactive_customers': filtered_customers,
             'routes_instances': RouteMaster.objects.all(),
             'filter_data': filter_data,
             'data_filter': bool(route_name),
@@ -815,7 +817,7 @@ def customer_list_excel(request):
         table_border_format = workbook.add_format({'border':1})
         worksheet.conditional_format(4, 0, len(df.index)+4, len(df.columns) - 1, {'type':'cell', 'criteria': '>', 'value':0, 'format':table_border_format})
         merge_format = workbook.add_format({'align': 'center', 'bold': True, 'font_size': 16, 'border': 1})
-        worksheet.merge_range('A1:K2', f'Sana Water', merge_format)
+        worksheet.merge_range('A1:K2', f'Al-Wafa Water', merge_format)
         merge_format = workbook.add_format({'align': 'center', 'bold': True, 'border': 1})
         worksheet.merge_range('A3:K3', f'    Customer List   ', merge_format)
         # worksheet.merge_range('E3:H3', f'Date: {def_date}', merge_format)

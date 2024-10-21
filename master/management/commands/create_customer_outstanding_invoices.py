@@ -18,7 +18,7 @@ class Command(BaseCommand):
         customers = Customers.objects.filter(routes=route)
         
         for customer in customers:
-            outstanding_in = CustomerOutstanding.objects.filter(customer=customer,product_type='amount')
+            outstanding_in = CustomerOutstanding.objects.filter(created_date__date=customer,product_type='amount')
             for i in outstanding_in:
                 Invoice.objects.filter(invoice_no=i.invoice_no).delete()
             outstanding_in.delete()

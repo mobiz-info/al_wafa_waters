@@ -400,10 +400,11 @@ class SupplyItemCustomersSerializer(serializers.ModelSerializer):
     pending_to_return = serializers.SerializerMethodField()
     coupon_details = serializers.SerializerMethodField()
     is_supplied = serializers.SerializerMethodField()
-
+    total_five_gallon_quantity = serializers.SerializerMethodField()
+    
     class Meta:
         model = Customers
-        fields = ['customer_id', 'customer_name', 'routes', 'sales_type', 'products', 'pending_to_return', 'coupon_details', 'is_supplied']
+        fields = ['customer_id', 'customer_name', 'routes', 'sales_type', 'products', 'pending_to_return', 'coupon_details', 'is_supplied','total_five_gallon_quantity',]
         
     def get_products(self, obj):
         products_data = {}
@@ -471,6 +472,23 @@ class SupplyItemCustomersSerializer(serializers.ModelSerializer):
         if CustomerSupply.objects.filter(customer=obj,created_date__date=datetime.today().date()).exists() :
             status = True
         return status
+    
+    def get_total_five_gallon_quantity(self, obj):
+       
+        try:
+            customer = Customers.objects.get(pk=obj.pk)
+            base_qty = customer.no_of_bottles_required
+        except Customers.DoesNotExist:
+            base_qty = 0
+
+        additional_requests = DiffBottlesModel.objects.filter(
+            delivery_date__date=date.today(),
+            customer__pk=obj.pk,
+            product_item__product_name="5 Gallon"
+        ).aggregate(total_additional=Sum('quantity_required'))['total_additional'] or 0
+
+        total_qty = base_qty + additional_requests
+        return total_qty
 
 class CustomerSupplySerializer(serializers.ModelSerializer):
     
@@ -624,22 +642,25 @@ class CustomerOutstandingSerializer(serializers.ModelSerializer):
         fields = ['customer_id','customer_name','building_name','route_name','route_id','door_house_no','amount','empty_can','coupons']
     
     def get_amount(self,obj):
-        result = 0
-        if (instances:=CustomerOutstandingReport.objects.filter(customer=obj,product_type="amount")).exists():
-            result = instances.first().value
-        return result
+        date_str = self.context.get('date_str')
+        outstanding_amounts = OutstandingAmount.objects.filter(customer_outstanding__customer=obj,customer_outstanding__created_date__date__lte=date_str).aggregate(total_amount=Sum('amount'))['total_amount'] or 0
+        collection_amount = CollectionPayment.objects.filter(customer=obj,created_date__date__lte=date_str).aggregate(total_amount_received=Sum('amount_received'))['total_amount_received'] or 0
+        
+        return max(outstanding_amounts - collection_amount, 0)
     
     def get_empty_can(self,obj):
-        result = 0
-        if (instances:=CustomerOutstandingReport.objects.filter(customer=obj,product_type="emptycan")).exists():
-            result = instances.first().value
-        return result
+        date_str = self.context.get('date_str')
+        outstanding_empty_bottles = OutstandingProduct.objects.filter(customer_outstanding__customer=obj,customer_outstanding__created_date__date__lte=date_str).aggregate(total_amount=Sum('empty_bottle'))['total_amount'] or 0
+        # collection_amount = CollectionPayment.objects.filter(customer__pk=customer_id,created_date__date__lte=date).aggregate(total_amount_received=Sum('amount_received'))['total_amount_received'] or 0
+        
+        return outstanding_empty_bottles 
     
     def get_coupons(self,obj):
-        result = 0
-        if (instances:=CustomerOutstandingReport.objects.filter(customer=obj,product_type="coupons")).exists():
-            result = instances.first().value
-        return result
+        date_str = self.context.get('date_str')
+        outstanding_coupons = OutstandingCoupon.objects.filter(customer_outstanding__customer=obj,customer_outstanding__created_date__date__lte=date_str).aggregate(total_amount=Sum('count'))['total_amount'] or 0
+        # collection_amount = CollectionPayment.objects.filter(customer__pk=customer_id,created_date__date__lte=date).aggregate(total_amount_received=Sum('amount_received'))['total_amount_received'] or 0
+        
+        return outstanding_coupons
     
     def get_route_id(self,obj):
         return obj.routes.route_id
@@ -2335,10 +2356,32 @@ class CustomersOutstandingBottlesSerializer(serializers.ModelSerializer):
     
 class SalesmanSerializer(serializers.ModelSerializer):
     full_name = serializers.SerializerMethodField()
+    routes = serializers.SerializerMethodField()
+
 
     class Meta:
         model = CustomUser
-        fields = ['id', 'staff_id', 'username', 'first_name', 'last_name', 'full_name']
+        fields = ['id', 'staff_id', 'username', 'first_name', 'last_name', 'full_name', 'routes']
 
     def get_full_name(self, obj):
         return f"{obj.first_name} {obj.last_name}".strip()
+
+    def get_routes(self, obj):
+        """
+        Get all routes associated with the salesman.
+        """
+        routes = []
+        # Filter for the van associated with the salesman
+        vans = Van.objects.filter(salesman=obj)
+
+        # Iterate through each van and get the routes associated with it
+        for van in vans:
+            van_routes = Van_Routes.objects.filter(van=van)
+            for van_route in van_routes:
+                if van_route.routes:
+                    routes.append({
+                        "id": str(van_route.routes.route_id),
+                        "name": van_route.routes.route_name
+                    })
+
+        return routes if routes else [{"id": None, "name": "No Routes Assigned"}]

@@ -77,4 +77,7 @@ urlpatterns = [
 
         path('upload-outstanding/', upload_outstanding, name='upload_outstanding'),
 
+        path('ageing_report/', ageing_report_view, name='ageing_report'),
+        
+        re_path(r'^customer_transaction_list/$', customer_transaction_list, name='customer_transaction_list'),
 ]

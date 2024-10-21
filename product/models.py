@@ -105,7 +105,7 @@ class Staff_Orders(models.Model):
     )
     order_via = models.CharField(max_length=20, choices=VIA_CHOICES, null=True, blank=True, default='Via Staff')
     order_date = models.DateField(null=True, blank=True)
-    delivery_date = models.DateField(null=True, blank=True)
+    # delivery_date = models.DateField(null=True, blank=True)
     
     class Meta:
         ordering = ('order_number',)

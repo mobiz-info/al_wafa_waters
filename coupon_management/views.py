@@ -24,6 +24,7 @@ from django.views import View
 from datetime import datetime
 from django.core.exceptions import ObjectDoesNotExist
 from django.http import JsonResponse, HttpResponse
+from django.db.models import Q
 
 # Create your views here.
 def get_next_coupon_bookno(request):
@@ -537,8 +538,12 @@ def customer_stock_pdf(request):
 
 def redeemed_history(request):
     filter_data = {}
+    query = request.GET.get("q", "").strip()  # Get the search query
+
     start_date = date.today()
     end_date = date.today()
+    route_name =request.GET.get('route_name')
+    
     
     if request.GET.get('start_date'):
         start_date = datetime.strptime(request.GET.get('start_date'), '%Y-%m-%d').date()
@@ -549,10 +554,90 @@ def redeemed_history(request):
     filter_data["end_date"] = end_date.strftime('%Y-%m-%d')
     
     instances = CustomerSupply.objects.filter(created_date__date__gte=start_date,created_date__date__lte=end_date,customer__sales_type="CASH COUPON").order_by("-created_date")
-
+    
+    if route_name:
+        instances = instances.filter(customer__routes__route_name=route_name)
+        filter_data['route_name'] = route_name
+    # Apply search filter to instances if a query exists
+    if query:
+        instances = instances.filter(
+            Q(customer__custom_id__icontains=query) |
+            Q(customer__customer_name__icontains=query) |
+            Q(customer__mobile_no__icontains=query) |
+            Q(customer__location__location_name__icontains=query) |
+            Q(customer__building_name__icontains=query)
+        )
+        filter_data['q'] = query
+        
+    # Calculate totals for manual and digital coupons manually
+    total_manual_coupons = 0
+    total_digital_coupons = 0
+    for instance in instances:
+        total_coupons = instance.total_coupon_recieved()  # Using the method from the model
+        total_manual_coupons += total_coupons.get('manual_coupon', 0)
+        total_digital_coupons += total_coupons.get('digital_coupon', 0)
+        
+    # Get all route names for the dropdown
+    route_li = RouteMaster.objects.all()
     context = {
         'instances': instances,
         "filter_data": filter_data,
+        "route_li": route_li,
+        "total_manual_coupons": total_manual_coupons,
+        "total_digital_coupons": total_digital_coupons,
     }
 
     return render(request, 'coupon_management/redeemed_history.html', context)
+
+def print_redeemed_history(request):
+    filter_data = {}
+    query = request.GET.get("q", "").strip()  # Get the search query
+
+    start_date = date.today()
+    end_date = date.today()
+    route_name =request.GET.get('route_name')
+    
+    
+    if request.GET.get('start_date'):
+        start_date = datetime.strptime(request.GET.get('start_date'), '%Y-%m-%d').date()
+    if request.GET.get('end_date'):
+        end_date = datetime.strptime(request.GET.get('end_date'), '%Y-%m-%d').date()
+    
+    filter_data["start_date"] = start_date.strftime('%Y-%m-%d')
+    filter_data["end_date"] = end_date.strftime('%Y-%m-%d')
+    
+    instances = CustomerSupply.objects.filter(created_date__date__gte=start_date,created_date__date__lte=end_date,customer__sales_type="CASH COUPON").order_by("-created_date")
+    
+    if route_name:
+        instances = instances.filter(customer__routes__route_name=route_name)
+        filter_data['route_name'] = route_name
+    # Apply search filter to instances if a query exists
+    if query:
+        instances = instances.filter(
+            Q(customer__custom_id__icontains=query) |
+            Q(customer__customer_name__icontains=query) |
+            Q(customer__mobile_no__icontains=query) |
+            Q(customer__location__location_name__icontains=query) |
+            Q(customer__building_name__icontains=query)
+        )
+        filter_data['q'] = query
+        
+    # Calculate totals for manual and digital coupons manually
+    total_manual_coupons = 0
+    total_digital_coupons = 0
+    for instance in instances:
+        total_coupons = instance.total_coupon_recieved()  # Using the method from the model
+        total_manual_coupons += total_coupons.get('manual_coupon', 0)
+        total_digital_coupons += total_coupons.get('digital_coupon', 0)
+        
+    # Get all route names for the dropdown
+    route_li = RouteMaster.objects.all()
+    context = {
+        'instances': instances,
+        "filter_data": filter_data,
+        "route_li": route_li,
+        "total_manual_coupons": total_manual_coupons,
+        "total_digital_coupons": total_digital_coupons,
+    }
+
+    return render(request, 'coupon_management/print_redeemed_history.html', context)

@@ -485,10 +485,10 @@ def staffIssueOrdersCreate(request, staff_order_details_id):
                         if 0 < int(quantity_issued) <= int(product_stock.quantity):
                             
                             # Check the delivery date
-                            delivery_date = issue.staff_order_id.delivery_date
+                            order_date = issue.staff_order_id.order_date
                             today = date.today()
 
-                            if delivery_date == today:
+                            if order_date == today:
                                 # **Today's Delivery: Update VanProductStock**
                                 
                                 # Creating Staff Issue Order
@@ -581,7 +581,7 @@ def staffIssueOrdersCreate(request, staff_order_details_id):
                                     product=issue.product_id,
                                     van=van,
                                     issued_quantity=str(quantity_issued),  # Assuming quantity is stored as string
-                                    date=delivery_date,
+                                    date=order_date,
                                     created_by=request.user.id,
                                     modified_by=request.user.id,
                                     modified_date=datetime.now()

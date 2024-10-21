@@ -92,8 +92,8 @@
                                     <th>Room No/Floor No</th>
                                     <th>Route</th>
                                     <th>Outstanding Amount</th>
-                                    <th>Empty Can</th>
-                                    <th>Coupon</th>
+                                    {% comment %} <th>Empty Can</th> {% endcomment %}
+                                    {% comment %} <th>Coupon</th> {% endcomment %}
                                     <th>Action</th>
                                 </tr>
                             </thead>
@@ -102,8 +102,8 @@
                                 {% paginate 20 instances %}
                                 {% for customer in instances %}
                                     {% get_outstanding_amount customer.pk date as outstanding_amount%}
-                                    {% get_outstanding_empty_bottle customer.pk date as outstanding_empty_bottles%}
-                                    {% get_outstanding_coupon customer.pk date as outstanding_coupons%}
+                                    {% get_outstanding_bottles customer.pk date as outstanding_empty_bottles%}
+                                    {% get_outstanding_coupons customer.pk date as outstanding_coupons%}
                                     {% if outstanding_amount != 0 %}
                                     <tr>
                                         <td>{{ forloop.counter }}</td>
@@ -113,8 +113,8 @@
                                         <td>{{ customer.door_house_no }}</td>
                                         <td>{{ customer.routes.route_name }}</td>
                                         <td>{{ outstanding_amount }}</td>
-                                        <td>{{ outstanding_empty_bottles }}</td>
-                                        <td>{{ outstanding_coupons }}</td>
+                                        {% comment %} <td>{{ outstanding_empty_bottles }}</td> {% endcomment %}
+                                        {% comment %} <td>{{ outstanding_coupons }}</td> {% endcomment %}
                                         <td class="text-center">
                                             <div class="g-2">
                                                 <a href="{% url 'customer_outstanding_details' customer.pk %}" aria-label="View" class="btn btn-warning-light btn-sm" data-bs-toggle="tooltip" data-bs-original-title="View">
@@ -134,8 +134,8 @@
                                 <tr>
                                     <td colspan="6" class="text-end fw-bold">Total Outstanding Amount:</td>
                                     <td class="fw-bold">{{ net_total_outstanding }}</td>
-                                    <td class="fw-bold">{{ total_outstanding_empty_bottles }}</td>
-                                    <td class="fw-bold">{{ total_outstanding_coupons }}</td>
+                                    {% comment %} <td class="fw-bold">{{ total_outstanding_empty_bottles }}</td>
+                                    <td class="fw-bold">{{ total_outstanding_coupons }}</td> {% endcomment %}
                                     <td></td>
                                 </tr>
                             </tfoot>

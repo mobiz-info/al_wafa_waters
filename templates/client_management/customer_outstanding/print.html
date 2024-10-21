@@ -58,14 +58,17 @@
                                 <th>Room No/<br>Floor No</th>
                                 <th>Route</th>
                                 <th>Amount</th>
-                                {% comment %} <th>Empty Can</th>
-                                <th>Coupon</th> {% endcomment %}
+                                <th>Empty Can</th>
+                                <th>Coupon</th>
                             </tr>
                         </thead>
                         <tbody>
-                            {% for customer in instances %}
+                            {% if instances %}
+                                {% for customer in instances %}
                                 {% get_outstanding_amount customer.pk date as outstanding_amount %}
-                                {% comment %} {% if outstanding_amount != 0 %} {% endcomment %}
+                                {% if outstanding_amount != 0 %}
+                                {% get_outstanding_bottles customer.pk date as outstanding_bottles %}
+                                {% get_outstanding_coupons customer.pk date as outstanding_coupons %}
                                 <tr>
                                     <td>{{ forloop.counter }}</td>
                                     <td>{{ customer.custom_id }}</td>
@@ -74,21 +77,23 @@
                                     <td>{{ customer.door_house_no }}</td>
                                     <td>{{ customer.routes.route_name }}</td>
                                     <td>{{ outstanding_amount }}</td>
+                                    <td>{{ outstanding_bottles }}</td>
+                                    <td>{{ outstanding_coupons }}</td>
                                 </tr>
-                                {% comment %} {% endif %} {% endcomment %}
-                            {% empty %}
-                            <tr>
-                                <td colspan="7" class="text-center">No outstanding records found.</td>
-                            </tr>
-                            {% endfor %}
+                                {% endif %}
+                                {% endfor %}
+                                <tr>
+                                    <td colspan="6" class="text-end fw-bold">Total Outstanding Amount:</td>
+                                    <td class="fw-bold">{{ net_total_outstanding }}</td>
+                                    <td class="fw-bold">{{ total_outstanding_bottles }}</td>
+                                    <td class="fw-bold">{{ total_outstanding_coupons }}</td>
+                                </tr>
+                            {% else %}
+                                <tr>
+                                    <td colspan="9" class="text-center">No outstanding records found.</td>
+                                </tr>
+                            {% endif %}
                         </tbody>
-                        <tfoot>
-                            <tr>
-                                <td colspan="6" class="text-end fw-bold">Total Outstanding Amount:</td>
-                                <td class="fw-bold">{{ net_total_outstanding }}</td>
-                                <td></td>
-                            </tr>
-                        </tfoot>
                     </table>
                 </div>
             </div>

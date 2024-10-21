@@ -1,14 +1,15 @@
 {% extends 'base.html' %}
-{% block title %} Collection List {% endblock %}
+{% block title %} Receipt List {% endblock %}
 {% block content %}
 {% load static %}
 {% load el_pagination_tags %}
+
 <!-- Page Header -->
 <div class="page-header-breadcrumb d-md-flex d-block align-items-center justify-content-between ">
-    <h4 class="fw-medium mb-0">Collection List</h4>
+    <h4 class="fw-medium mb-0">Receipt List</h4>
     <ol class="breadcrumb">
         <li class="breadcrumb-item"><a href="javascript:void(0);" class="text-white-50">Sales Management</a></li>
-        <li class="breadcrumb-item active" aria-current="page">Collection List</li>
+        <li class="breadcrumb-item active" aria-current="page">Receipt List</li>
     </ol>
 </div>
 <!-- Page Header Close -->
@@ -22,12 +23,12 @@
                 <div class="card custom-card">
                     <div class="card-header">
                         <div class="card-title">
-                            Collection List
+                            Receipt List
                         </div>
                     </div>
                     <div class="card-body">
                         <div class="mt">
-                            <form method="GET" action="{% url 'collection_list' %}">
+                            <form method="GET" action="{% url 'receipt_list' %}">
                                 <div class="card-body">
                                     <div class="row align-items-center">
                                         <div class="col">
@@ -64,46 +65,42 @@
                         </div>
                         <div id="table-container" style="overflow:scroll;">
                             <div class="card-body">
-                                <!-- Collection Table -->
+                                <!-- Receipt Table -->
                                 <table  class="table table-bordered text-wrap" style="width: 100%">
                                     <thead>
                                         <tr>
                                             <th scope="col" class="text-center">Sl.No</th>
-                                            <th scope="col" class="text-center">Date</th>
-                                            <th scope="col" class="text-center">Customer Name</th>
-                                            <th scope="col" class="text-center">Building Name/<br>House No</th>
-                                            <th scope="col" class="text-center">Customer ID</th>
-                                            <th scope="col" class="text-center">Salesman</th>
-                                            <th scope="col" class="text-center">Route</th>
-                                            <th scope="col" class="text-center">Payment<br> Method</th>
-                                            <th scope="col" class="text-center">Receipt Number</th>
-                                            <th scope="col" class="text-center">Total Amount</th>
-                                            <th scope="col" class="text-center">Collected Amount</th>
-                                            <th scope="col" class="text-center">Action</th>
+                                            <th>Date Time</th>
+                                            <th>Customer Name<br> Customer Code</th>
+                                            <th>Building Name<br>Room No</th>
+                                            <th>Route</th>
+                                            <th>Receipt Number</th>
+                                            <th>Amount</th>
+                                            <th>Against Invoice</th>
+                                            {% comment %} <th>transaction_type</th> {% endcomment %}
+                                            <th>Action</th>
                                         </tr>
                                     </thead>
                                     <tbody>
                                         {% load el_pagination_tags %}
-                                        {% paginate 20 instances %}
-                                        {% for instance in instances %}
+                                        {% paginate 40 receipts %}
+                                        {% for receipt in receipts %}
                                         <tr>
                                             <td class="text-center">{{ forloop.counter }}</td>
-                                            <td style="text-align:left;">{{ instance.created_date|date:"d/m/Y" }}</td>
-                                            <td style="text-align:left;">{{ instance.customer }}</td>
-                                            <td style="text-align:left;">{{ instance.customer.building_name }}<br>{{ instance.door_house_no }}</td>
-                                            <td style="text-align:left;">{{ instance.customer.custom_id }}</td>
-                                            <td style="text-align:left;">{{ instance.salesman }}</td>
-                                            <td style="text-align:left;">{{ instance.customer.routes.route_name }}</td>
-                                            <td style="text-align:left;">{{ instance.payment_method }}</td>
-                                            <td style="text-align:center;">{{ instance.receipt_number }}</td>
-                                            <td style="text-align:center;">{{ instance.total_amount }}</td>
-                                            <td style="text-align:center;">{{ instance.collected_amount }}</td>
+                                            <td>{{ receipt.created_date }}</td>
+                                            <td>{{ receipt.customer.customer_name }}<br>{{ receipt.customer.custom_id }}</td>
+                                            <td>{{ receipt.customer.building_name }}<br>{{ receipt.customer.door_house_no }}</td>
+                                            <td>{{ receipt.customer.routes }}</td> 
+                                            <td>{{ receipt.receipt_number }}</td>
+                                            <td>{{ receipt.amount_received }}</td>
+                                            <td>{{ receipt.invoice_number }}</td>
+                                            {% comment %} <td>{{ receipt.transaction_type }}</td> {% endcomment %}
                                             <td>
-                                                <a aria-label="anchor" class="action-button remove btn btn-danger-light btn-sm ms-2" data-bs-toggle="tooltip" data-bs-original-title="Delete"
-                                                    data-id="{{ instance.receipt_number }}" data-text="{{ confirm_delete_message }}" data-title="Are you sure?" 
-                                                    href="{% url 'delete_collection_payment' instance.receipt_number instance.customer.customer_id %}">
-                                                    <span class="ri-delete-bin-7-line fs-14"></span>
-                                                </a>
+                                                    <a aria-label="anchor" class="action-button remove btn btn-danger-light btn-sm ms-2" data-bs-toggle="tooltip" data-bs-original-title="Delete"
+                                                        data-id="{{ receipt.receipt_number }}" data-text="{{ confirm_delete_message }}" data-title="Are you sure?" 
+                                                        href="{% url 'delete_receipt' receipt.receipt_number receipt.customer.customer_id %}">
+                                                        <span class="ri-delete-bin-7-line fs-14"></span>
+                                                    </a>  
                                             </td>
                                         </tr>
                                         {% empty %}
