@@ -39,7 +39,7 @@ from invoice_management.models import INVOICE_TYPES, Invoice, InvoiceDailyCollec
 from client_management.forms import CoupenEditForm
 from master.serializers import *
 from master.functions import generate_serializer_errors, get_custom_id, get_next_visit_date
-from master.models import *
+
 from random import randint
 from datetime import datetime as dt
 from coupon_management.models import *
@@ -52,8 +52,9 @@ from rest_framework.permissions import IsAuthenticated
 
 from accounts.models import *
 from master.models import *
+from credit_note.models import *
 from product.models import *
-from sales_management.models import *
+from sales_management.models import CollectionItems, CollectionPayment, Receipt, SalesmanSpendingLog
 from van_management.models import *
 from customer_care.models import *
 from order.models import *
@@ -75,8 +76,6 @@ from django.core.mail import EmailMessage
 import threading
 import pytz
 import datetime as datim
-
-from .serializers import CustomersOutstandingCouponSerializer
 utc=pytz.UTC
 import logging,traceback
 from logging import *
@@ -160,6 +159,7 @@ class StoreKeeperLoginApi(APIView):
             return Response({'status': False, 'message': 'User does not exist!'})
         except Exception as e:
             return Response({'status': False, 'message': 'Something went wrong!'})
+
 
 class MarketingExecutiveLoginApi(APIView):
     def post(self, request, *args, **kwargs):
@@ -1103,9 +1103,15 @@ class ExpenseListAPI(APIView):
             date = datetime.strptime(date, '%Y-%m-%d').date()
         else:
             date = datetime.today().date()
-        
-        van_route = Van_Routes.objects.get(van__salesman=request.user,expense_date=date)
-        expenses = Expense.objects.filter(route=van_route.routes,van=van_route.van)
+
+        try:
+            # Try to get the van route for the authenticated salesman
+            van_route = Van_Routes.objects.get(van__salesman=request.user)
+        except Van_Routes.DoesNotExist:
+            return Response({"detail": "No van route assigned for this salesman."}, status=status.HTTP_404_NOT_FOUND)
+
+        # Filter expenses by van route and expense date
+        expenses = Expense.objects.filter(route=van_route.routes, van=van_route.van, expense_date=date)
         serializer = ExpenseSerializer(expenses, many=True)
         return Response(serializer.data)
 
@@ -1169,7 +1175,7 @@ class ChangeReasonListAPI(APIView):
     def get(self, request):
         change_reason = Change_Reason.objects.all()
         serializer = ChangeReasonSerializer(change_reason, many=True)
-        return Response(serializer.data, status=status.HTTP_200_OK)
+        return Response(serializer.data)
 
     def post(self, request):
         serializer = ChangeReasonSerializer(data=request.data)
@@ -1377,16 +1383,16 @@ class Customer_API(APIView):
                 return Response({'data': 'Successfully added'}, status=status.HTTP_201_CREATED)
             return Response({'status': False, 'data': serializer.errors}, status=status.HTTP_400_BAD_REQUEST)
         except Exception as e:
+            print(e)
             if CustomUser.objects.filter(username=request.data['mobile_no']).exists():
                 user_obj = CustomUser.objects.get(username=request.data['mobile_no'])
                 user_obj.delete()
-            print(e)
             return Response({'status': False, 'message': str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
     def put(self, request, id):
         try:
             customer = Customers.objects.get(customer_id=id)
-            serializer = CustomersCreateSerializers(customer, data=request.data)
+            serializer = CustomersCreateSerializers(instance=customer, data=request.data)
             if serializer.is_valid():
                 serializer.save(modified_by=request.user.id, modified_date=datetime.now())
                 return Response(serializer.data, status=status.HTTP_200_OK)
@@ -2038,34 +2044,27 @@ class Staff_New_Order(APIView):
         try:
             with transaction.atomic():
                 data_list = request.data.get('data_list', [])
-                last_order = Staff_Orders.objects.all()
-                if last_order.exists():
-                    last_order_number = last_order.latest("created_date").order_number
+                last_order = Staff_Orders.objects.all().latest("created_date")
+                if last_order:
+                    last_order_number = last_order.order_number
                     new_order_number = int(last_order_number) + 1
                 else:
                     new_order_number = 1
 
                 order_number = f"{new_order_number}"
                 order_date = request.GET.get('order_date')
-                # delivery_date = request.data.get('delivery_date')
-                
+            
                 if order_date:
                     order_date = datetime.strptime(order_date, '%Y-%m-%d').date()
                 else:
                     order_date = datetime.today().date()
-                
-                # if delivery_date:
-                #     delivery_date = datetime.strptime(delivery_date, '%Y-%m-%d').date()
-                # else:
-                #     delivery_date = datetime.today().date()
 
                 serializer_1 = self.staff_order_serializer(data=request.data)
                 if serializer_1.is_valid(raise_exception=True):
                     order_data = serializer_1.save(
                         created_by=request.user.id,
                         order_number=order_number.upper(),
-                        order_date=order_date,
-                        # delivery_date=delivery_date
+                        order_date=order_date
                     )
                     staff_order = order_data.staff_order_id
 
@@ -2400,6 +2399,10 @@ class Myclient_API(APIView):
             userid = request.data.get("id")
             route_id = request.data.get("route_id")
 
+            # # Ensure both 'id' and 'route_id' are provided
+            # if not userid or not route_id:
+            #     return Response({'status': False, 'message': 'User ID and Route ID are required'})
+
             # Fetch the staff user
             staff = CustomUser.objects.get(id=userid)
 
@@ -2427,6 +2430,7 @@ class Myclient_API(APIView):
             return Response({'status': False, 'message': 'User not found'})
         except Exception as e:
             return Response({'status': False, 'message': str(e)})
+
 
 class GetCustodyItem_API(APIView):
     authentication_classes = [BasicAuthentication]
@@ -2559,6 +2563,9 @@ def delete_coupon_recharge(invoice_no):
         return {"status": "error", "message": "Customer coupon not found."}
     except Exception as e:
         return {"status": "error", "message": f"An error occurred: {str(e)}"}
+    
+    
+
 
 class CustomerCouponRecharge(APIView):
     def post(self, request, *args, **kwargs):
@@ -2760,7 +2767,6 @@ class CustomerCouponRecharge(APIView):
                         invoice_number=",".join(invoice_numbers),
                         customer=customer_coupon.customer
                     )
-
                 # Create ChequeCouponPayment instanceno_of_leaflets
                 cheque_payment_instance = None
                 if coupon_data.pop("payment_type") == 'cheque':
@@ -2792,7 +2798,7 @@ class CustomerCouponRecharge(APIView):
         """
         try:
             customer_coupon = CustomerCoupon.objects.get(pk=pk)
-            if (customer_coupon):
+            if delete_coupon_recharge(customer_coupon.invoice_no):
                 return Response({"message": "Customer coupon recharge deleted successfully."}, status=status.HTTP_204_NO_CONTENT)
             else:
                 return Response({"message": "Failed to delete customer coupon recharge."}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
@@ -3628,17 +3634,6 @@ class create_customer_supply(APIView):
                         customer=customer_supply.customer,
                         invoice_number=",".join(invoice_numbers)
                     )
-                else:
-                    if customer_supply.customer.eligible_foc > 0:
-                        foc_count = min(customer_supply.customer.eligible_foc, suply_items.quantity)
-                        sold_count = suply_items.quantity - foc_count
-                        customer_supply.customer.eligible_foc -= foc_count  
-                        customer_supply.customer.save()
-                    else:
-                        foc_count = 0
-                        sold_count = suply_items.quantity
-
-                    
                 if invoice_generated:
                     response_data = {
                         "status": "true",
@@ -4607,12 +4602,9 @@ class OutstandingAmountListAPI(APIView):
     authentication_classes = [BasicAuthentication]
     permission_classes = [IsAuthenticated]
     def get(self, request, *args, **kwargs):
-        id = request.user.id
-        print("id",id)
-        customer=Customers.objects.filter(sales_staff__id = id)
-        print("customer",customer)
+        customer=Customers.objects.filter(sales_staff=request.user)
 
-        custody_items = CustodyCustomItems.objects.filter(custody_custom__customer__in =customer)
+        custody_items = CustodyCustomItems.objects.filter(custody_custom__customer__in=customer)
         print("custody_items",custody_items)
 
         serializer =CustodyCustomItemListSerializer(custody_items, many=True)
@@ -4795,6 +4787,53 @@ class customer_outstanding(APIView):
             "total_emptycan": total_outstanding_bottles,
             'message': 'success'
         })
+
+# class customer_outstanding(APIView):
+#     authentication_classes = [BasicAuthentication]
+#     permission_classes = [IsAuthenticated]
+
+#     def get(self, request, *args, **kwargs):
+#         customers = Customers.objects.filter(sales_staff=request.user)
+#         route_id = request.GET.get("route_id")
+
+#         if route_id:
+#             customers = customers.filter(routes__pk=route_id)
+
+#         customers_with_outstanding = []
+#         for customer in customers:
+#             amount = CustomerOutstandingReport.objects.filter(customer=customer, product_type="amount").aggregate(
+#                 total=Sum('value', output_field=DecimalField()))['total'] or 0
+#             coupons = CustomerOutstandingReport.objects.filter(customer=customer, product_type="coupons").aggregate(
+#                 total=Sum('value', output_field=DecimalField()))['total'] or 0
+#             empty_can = CustomerOutstandingReport.objects.filter(customer=customer, product_type="emptycan").aggregate(
+#                 total=Sum('value', output_field=DecimalField()))['total'] or 0
+
+#             if amount != 0 or coupons != 0 or empty_can != 0:
+#                 customers_with_outstanding.append(customer)
+
+#         serialized_data = CustomerOutstandingSerializer(customers_with_outstanding, many=True)
+
+#         customer_outstanding = CustomerOutstandingReport.objects.filter(customer__in=customers_with_outstanding)
+#         total_amount = customer_outstanding.filter(product_type="amount").aggregate(
+#             total=Sum('value', output_field=DecimalField()))['total'] or 0
+#         total_coupons = customer_outstanding.filter(product_type="coupons").aggregate(
+#             total=Sum('value', output_field=DecimalField()))['total'] or 0
+#         total_emptycan = customer_outstanding.filter(product_type="emptycan").aggregate(
+#             total=Sum('value', output_field=DecimalField()))['total'] or 0
+
+#         formatted_total_amount = "{:.2f}".format(total_amount)
+
+#         formatted_total_coupons = int(total_coupons)
+#         formatted_total_emptycan = int(total_emptycan)
+
+#         return Response({
+#             'status': True,
+#             'data': serialized_data.data,
+#             "total_amount": formatted_total_amount,
+#             "total_coupons": formatted_total_coupons,
+#             "total_emptycan": formatted_total_emptycan,
+#             'message': 'success'
+#         })
 
 
 class CustomerCouponListAPI(APIView):
@@ -4987,7 +5026,7 @@ class AddCollectionPayment(APIView):
                 amount_received=amount_received,
                 receipt_number=receipt_number,
             )
-           
+            
             remaining_amount = amount_received
             
             invoice_numbers = []
@@ -5033,6 +5072,7 @@ class AddCollectionPayment(APIView):
                 else:
                     # Break the loop if there is no remaining amount or the current invoice is fully paid
                     break
+            
             receipt = Receipt.objects.create(
                 transaction_type="collection",
                 instance_id=str(collection_payment.id),  # Correctly assign the ID as a string
@@ -5041,7 +5081,6 @@ class AddCollectionPayment(APIView):
                 customer=customer,
                 invoice_number=",".join(invoice_numbers)  # Join the invoice numbers into a comma-separated string
             )
-
             # If there is remaining amount after paying all invoices, adjust it with the outstanding balance
             if remaining_amount != Decimal('0'):
                 negatieve_remaining_amount = -remaining_amount
@@ -5072,6 +5111,7 @@ class AddCollectionPayment(APIView):
                         value=negatieve_remaining_amount,
                     )
                 
+                date_part = timezone.now().strftime('%Y%m%d')
                 try:
                     invoice_last_no = Invoice.objects.filter(is_deleted=False).latest('created_date')
                     last_invoice_number = invoice_last_no.invoice_no
@@ -5181,7 +5221,7 @@ class CustomerSalesReportAPI(APIView):
             'start_date': start_date.strftime('%Y-%m-%d'),
             'end_date': end_date.strftime('%Y-%m-%d'),
         }
-
+        
         sales = CustomerSupply.objects.select_related('customer', 'salesman').filter(
             created_date__date__gte=start_date,
             created_date__date__lte=end_date,
@@ -5296,9 +5336,7 @@ class DashboardAPI(APIView):
             
         date = datetime.strptime(date_str, '%Y-%m-%d')
         
-        today_customers = find_customers(request, date_str, route_id)
-        today_customers_count = len(today_customers) if today_customers else 0
-
+        today_customers_count = len(find_customers(request, date_str, route_id))
                 
         supplied_customers_count = CustomerSupply.objects.filter(customer__routes__pk=route_id,created_date__date=date).count()
         
@@ -5341,6 +5379,8 @@ class DashboardAPI(APIView):
         
         balance_in_hand = total_sales_amount_collected - expences
         
+        total_fivegallon_supplied = CustomerSupplyItems.objects.filter(customer_supply__customer__routes__pk=route_id,customer_supply__created_date__date=date).aggregate(total_qty=Sum('quantity'))['total_qty'] or 0
+        
         data = {
             'date': date_str,
             'today_schedule': {
@@ -5365,6 +5405,7 @@ class DashboardAPI(APIView):
                 'credit_sale_amount_recieved': credit_sales_amount_collected,
             },
             'expences': expences,
+            'total_fivegallon_supplied': total_fivegallon_supplied,
         }
         
         return Response({'status': True, 'data': data}, status=status.HTTP_200_OK)
@@ -5384,7 +5425,7 @@ class CollectionReportAPI(APIView):
             start_date = datetime.today().date()
             end_date = datetime.today().date()
         salesman=request.user
-        print("salesman",salesman)    
+        # print("salesman",salesman)    
         instances = CollectionPayment.objects.filter(created_date__date__gte=start_date,created_date__date__lte=end_date,salesman=request.user)
         serialized_data = CollectionReportSerializer(instances, many=True).data
         
@@ -5398,8 +5439,8 @@ class CollectionReportAPI(APIView):
                 'end_date': end_date.strftime('%Y-%m-%d'),
             }
         }, status=status.HTTP_200_OK)
-        
-        
+
+          
 #----------------------Coupon Supply Report
 class CouponSupplyCountAPIView(APIView):
     authentication_classes = [BasicAuthentication]
@@ -5420,7 +5461,6 @@ class CouponSupplyCountAPIView(APIView):
         serializer = CouponSupplyCountSerializer(coupon_counts, many=True)
 
         return Response({'status': True, 'data': serializer.data}, status=status.HTTP_200_OK)
-
 
 class Coupon_Sales_APIView(APIView):
     authentication_classes = [BasicAuthentication]
@@ -5453,6 +5493,7 @@ class Coupon_Sales_APIView(APIView):
         total_per_leaf_rate = sum(
             coupon.get_per_leaf_rate() for coupon in coupon_sales if coupon.get_per_leaf_rate() is not None
         )
+
         serializer = Coupon_Sales_Serializer(coupon_sales, many=True)
 
 # Return the response with totals in the footer
@@ -5462,7 +5503,7 @@ class Coupon_Sales_APIView(APIView):
             'total_sum': {
                 'total_rate': total_rate,
                 'total_amount_collected': total_amount_collected,
-                'total_per_leaf_rate':total_per_leaf_rate,
+                'total_per_leaf_rate': total_per_leaf_rate,
                 'total_balance': total_balance
             }
         }, status=status.HTTP_200_OK)
@@ -5511,16 +5552,15 @@ class RedeemedHistoryAPI(APIView):
         serializer = CustomerCouponCountsSerializer(customer_coupon_counts, many=True)
         return Response(serializer.data, status=status.HTTP_200_OK)
 
-# VisitReportAPI
 # Coupon Consumption Report
 class CouponConsumptionReport(APIView):
     authentication_classes = [BasicAuthentication]
     permission_classes = [IsAuthenticated]
     def get(self, request, *args, **kwargs):
             start_date = request.data.get('start_date')  
-            print("start_date",start_date)
             end_date = request.data.get('end_date')  
-            print("end_date",end_date)
+            # print("start_date",start_date)
+            # print("end_date",end_date)
             
             if start_date and end_date:
                 start_date = datetime.strptime(start_date, '%Y-%m-%d').date()
@@ -5528,11 +5568,13 @@ class CouponConsumptionReport(APIView):
             else:
                 start_date = date.today()
                 end_date = date.today()
-
+            
+            van_route = Van_Routes.objects.get(van__salesman=request.user).routes
             supply_instance = CustomerSupply.objects.filter(
                 created_date__date__gte=start_date,
                 created_date__date__lte=end_date,
-                customer__sales_type="CASH COUPON"
+                customer__sales_type="CASH COUPON",
+                customer__routes=van_route
             )
             
             serializer = CouponConsumptionSerializer(supply_instance, many=True)
@@ -5564,6 +5606,7 @@ class CouponConsumptionReport(APIView):
                 'total_no_of_leaflet_collected': total_no_of_leaflet_collected,
                 'total_pending_leaflet': total_pending_leaflet,
             }, status=status.HTTP_200_OK)
+
 
 from django.utils.timezone import make_aware
 from django.db.models import Sum, Count, Case, When, IntegerField
@@ -6467,7 +6510,7 @@ class FreshcanVsCouponView(APIView):
             return Response(customers_serializer.data, status=status.HTTP_200_OK)
         except Exception as e:
             return Response({"error": str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
-
+        
 
 class CustomerCartAPIView(APIView):
     authentication_classes = [BasicAuthentication]
@@ -6619,6 +6662,7 @@ class CustomerCartAPIView(APIView):
             
             return Response(response_data, status=status.HTTP_400_BAD_REQUEST)
 
+
 class CustomerOrdersAPIView(APIView):
     authentication_classes = [BasicAuthentication]
     permission_classes = [IsAuthenticated]
@@ -6664,9 +6708,6 @@ class CustomerOrdersAPIView(APIView):
                 
                 customer_order_instance.grand_total += customer_order_item_instance.total_amount
                 customer_order_instance.save()
-                
-            customer_cart.order_status = True
-            customer_cart.save()
                 
             customer_cart.order_status = True
             customer_cart.save()
@@ -8664,6 +8705,9 @@ class CreditSalesReportAPIView(APIView):
 
             return Response(data, status=status.HTTP_200_OK)
         
+        else:
+            return Response({"message": "Add a route name"}, status=status.HTTP_400_BAD_REQUEST)
+        
 #---------------------------Bottle Count API ------------------------------------------------   
 
 class VanRouteBottleCountView(APIView):
@@ -8919,11 +8963,8 @@ class addDamageBottleAPIView(APIView):
             with transaction.atomic():
                 if product_id:
                     product_item = ProdutItemMaster.objects.get(pk=product_id)
-                    # print(f"Product ID: {product_id} retrieved successfully.")
-
                 else:
                     product_item = ProdutItemMaster.objects.get(product_name="5 Gallon")
-                    # print("Product name '5 Gallon' retrieved successfully.")
                 
                 DamageBottleStock.objects.create(
                         product=product_item,
@@ -8944,6 +8985,7 @@ class addDamageBottleAPIView(APIView):
                     van_product_stock.save()
                     # print(f"VanProductStock updated: {van_product_stock} EmptyStock {van_product_stock.empty_can_count}.")
                     
+                
                 status_code = status.HTTP_200_OK
                 response_data = {
                     "status": "true",
@@ -9023,7 +9065,6 @@ class ExcessBottleCountAPIView(APIView):
             }
         
         return Response(response_data, status=status_code)
-    
     
     
 class ProductTransferChoicesAPI(APIView):
@@ -9302,7 +9343,6 @@ class CustomerProductReplaceAPIView(APIView):
         return Response(response_data, status=status_code)
     
 
-
 class CustomerCouponListAPIView(APIView):
     def get(self, request, customer_id):
         try:
@@ -9325,7 +9365,7 @@ class CustomerCouponListAPIView(APIView):
         except Customers.DoesNotExist:
             return Response({"error": "Customer not found"}, status=status.HTTP_404_NOT_FOUND)
         
-        
+
 class CreditNoteListAPI(APIView):
     def get(self, request, *args, **kwargs):
         queryset = CreditNote.objects.filter(is_deleted=False)
@@ -9474,7 +9514,7 @@ class CustomerSupplyListAPIView(APIView):
 
         return Response(response_data, status=status.HTTP_200_OK)
     
-    
+
 class CustomersOutstandingAmountsAPI(APIView):
     authentication_classes = [BasicAuthentication]
     permission_classes = [IsAuthenticated]
@@ -9607,7 +9647,8 @@ class CustomersOutstandingBottlesAPI(APIView):
                     'total_pending_count': total_pending_count,
                 },
         })
-        
+
+
 class SalesmanListAPIView(APIView):
     """
     API view to list all salesmen.

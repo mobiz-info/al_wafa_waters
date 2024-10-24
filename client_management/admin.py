@@ -8,7 +8,6 @@ class CustomerCouponStockAdmin(admin.ModelAdmin):
 admin.site.register(CustomerCouponStock,CustomerCouponStockAdmin)
 
 admin.site.register(CustomerCoupon)
-admin.site.register(CustomerCouponItems)
 admin.site.register(ChequeCouponPayment)
 
 class CustomerOutstandingAdmin(admin.ModelAdmin):
@@ -51,7 +50,19 @@ class CustomerOutstandingAmountAdmin(admin.ModelAdmin):
 
 admin.site.register(OutstandingAmount, CustomerOutstandingAmountAdmin)
 
-admin.site.register(OutstandingCoupon)
+class OutstandingCouponAdmin(admin.ModelAdmin):
+    list_display = ('id', 'get_customer_name', 'count')
+
+    def get_customer_name(self, obj):
+        # Access the related customer through the 'customer_outstanding' relationship
+        return obj.customer_outstanding.customer.customer_name  # Assuming 'name' is the field in Customer
+
+    # Set the column name for the admin display
+    get_customer_name.short_description = 'Customer Name'
+
+admin.site.register(OutstandingCoupon, OutstandingCouponAdmin)
+
+
 class CustomerOutstandingReportAdmin(admin.ModelAdmin):
     list_display = ('id','product_type','customer','value')
 admin.site.register(CustomerOutstandingReport,CustomerOutstandingReportAdmin)
@@ -63,14 +74,3 @@ admin.site.register(CustomerSupply,CustomerSupplyAdmin)
 admin.site.register(CustomerSupplyItems)
 admin.site.register(CustomerSupplyStock)
 admin.site.register(CustomerCart)
-
-class DialyCustomersAdmin(admin.ModelAdmin):
-    list_display = ('id','date','customer','route','qty','is_emergency','is_supply')
-    ordering = ("-date",)
-    
-    def customer(self, obj):
-        return obj.customer.customer_name
-    
-    def route(self, obj):
-        return obj.route.route_name
-admin.site.register(DialyCustomers,DialyCustomersAdmin)

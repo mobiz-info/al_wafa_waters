@@ -1,10 +1,9 @@
 from django.db import models
 from django.db import models
 from django.db.models import Sum,DecimalField
-from django.core.exceptions import ObjectDoesNotExist
 
 from accounts.models import Customers, CustomUser
-from client_management.models import CustomerSupply,CustomerCoupon
+from client_management.models import CustomerSupply
 from invoice_management.models import Invoice
 from master.models import RouteMaster
 from coupon_management.models  import Coupon, CouponType
@@ -235,8 +234,8 @@ class SalesmanSpendingLog(models.Model):
 
     def __str__(self):
         return f"{self.customer} - {self.created_date}"
-
-
+    
+    
 class Receipt(models.Model):
     TRANSACTION_TYPE_CHOICES = (
         ('supply', 'supply'),

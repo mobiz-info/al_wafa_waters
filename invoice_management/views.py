@@ -30,6 +30,7 @@ from invoice_management.models import Invoice, InvoiceItems
 from product.models import Product, Product_Default_Price_Level
 from invoice_management.forms import InvoiceForm, InvoiceItemsForm
 from invoice_management.serializers import BuildingNameSerializers, ProductSerializers,CustomersSerializers
+from accounts.views import log_activity
 
 # Create your views here.
 @api_view(['GET'])
@@ -131,18 +132,13 @@ def invoice_list(request):
     :param request:
     :return: Invoices list view
     """
-    
+    filter_date = request.GET.get('filter_date')
     instances = Invoice.objects.filter(is_deleted=False).order_by("-created_date")
          
-    date_range = ""
-    date_range = request.GET.get('date_range')
-    # print(date_range)
-
-    if date_range:
-        start_date_str, end_date_str = date_range.split(' - ')
-        start_date = datetime.strptime(start_date_str, '%m/%d/%Y').date()
-        end_date = datetime.strptime(end_date_str, '%m/%d/%Y').date()
-        instances = instances.filter(date__range=[start_date, end_date])
+    if filter_date:
+        filter_date = datetime.datetime.strptime(filter_date, '%m/%d/%Y').date()
+        instances = instances.filter(date=filter_date)
+        filter_data['filter_date'] = filter_date.strftime('%Y-%m-%d')
     
     filter_data = {}
     query = request.GET.get("q")
@@ -151,13 +147,7 @@ def invoice_list(request):
 
         instances = instances.filter(
             Q(invoice_no__icontains=query) |
-            Q(customer__customer_name__icontains=query)|
-            Q(invoice_type__icontains=query)|
-            Q(net_taxable__icontains=query)|
-            Q(vat__icontains=query)|
-            Q(amout_total__icontains=query)|
-            Q(amout_recieved__icontains=query)
-             
+            Q(customer__customer_name__icontains=query) 
         )
         title = "Invoice List - %s" % query
         filter_data['q'] = query
@@ -169,7 +159,6 @@ def invoice_list(request):
         'page_name' : 'Invoice List',
         'page_title' : 'Invoice List',
         'filter_data' :filter_data,
-        'date_range': date_range,
         
         'is_invoice': True,
         'is_need_datetime_picker': True,
@@ -425,88 +414,88 @@ def delete_invoice(request, pk):
     :param pk:
     :return:
     """
-    try:
-        with transaction.atomic():
-            invoice = Invoice.objects.get(pk=pk)
-            if CustomerSupply.objects.filter(invoice_no=invoice.invoice_no).exists():
-                customer_supply_instance = get_object_or_404(CustomerSupply, invoice_no=invoice.invoice_no)
-                supply_items_instances = CustomerSupplyItems.objects.filter(customer_supply=customer_supply_instance)
-                five_gallon_qty = supply_items_instances.filter(product__product_name="5 Gallon").aggregate(total_qty=Sum('quantity'))['total_qty'] or 0
-                
-                DiffBottlesModel.objects.filter(
-                    delivery_date__date=customer_supply_instance.created_date.date(),
-                    assign_this_to=customer_supply_instance.salesman,
-                    customer=customer_supply_instance.customer_id
-                    ).update(status='pending')
-                
-                # Handle outstanding amount adjustments
-                handle_outstanding_amounts(customer_supply_instance, five_gallon_qty)
-                
-                # Handle coupon deletions and adjustments
-                handle_coupons(customer_supply_instance, five_gallon_qty)
-                
-                # Update van product stock and empty bottle counts
-                update_van_product_stock(customer_supply_instance, supply_items_instances, five_gallon_qty)
-                
-                # Mark customer supply and items as deleted
-                customer_supply_instance.delete()
-                supply_items_instances.delete()
-                
-            if CustomerCoupon.objects.filter(invoice_no=invoice.invoice_no).exists():
-                instance = CustomerCoupon.objects.get(invoice_no=invoice.invoice_no)
-                delete_coupon_recharge(instance.invoice_no)
-                
-            if CustomerOutstanding.objects.filter(invoice_no=invoice.invoice_no).exists():
-                # Retrieve outstanding linked to the invoice
-                outstanding = CustomerOutstanding.objects.get(invoice_no=invoice.invoice_no)
-                
-                # Reverse the outstanding invoice creation
-                outstanding.invoice_no = None
-                outstanding.save()
-                
-                # Adjust CustomerOutstandingReport
-                report = CustomerOutstandingReport.objects.get(customer=outstanding.customer, product_type='amount')
-                report.value -= invoice.amout_total  # Adjust based on your invoice amount field
-                report.save()
-                    
-                invoice.is_deleted=True
-                invoice.save()
-                
-                InvoiceItems.objects.filter(invoice=invoice).update(is_deleted=True)
-                
-            response_data = {
-                "status": "true",
-                "title": "Successfully Deleted",
-                "message": "Invoice and associated data successfully deleted and reversed.",
-                "redirect": "true",
-                "redirect_url": reverse('invoice:invoice_list'),
-            }
+    # try:
+    #     with transaction.atomic():
+    invoice = Invoice.objects.get(pk=pk)
+    if CustomerSupply.objects.filter(invoice_no=invoice.invoice_no).exists():
+        customer_supply_instance = get_object_or_404(CustomerSupply, invoice_no=invoice.invoice_no)
+        supply_items_instances = CustomerSupplyItems.objects.filter(customer_supply=customer_supply_instance)
+        five_gallon_qty = supply_items_instances.filter(product__product_name="5 Gallon").aggregate(total_qty=Sum('quantity'))['total_qty'] or 0
+        
+        DiffBottlesModel.objects.filter(
+            delivery_date__date=customer_supply_instance.created_date.date(),
+            assign_this_to=customer_supply_instance.salesman,
+            customer=customer_supply_instance.customer_id
+            ).update(status='pending')
+        
+        # Handle outstanding amount adjustments
+        handle_outstanding_amounts(customer_supply_instance, five_gallon_qty)
+        
+        # Handle coupon deletions and adjustments
+        handle_coupons(customer_supply_instance, five_gallon_qty)
+        
+        # Update van product stock and empty bottle counts
+        update_van_product_stock(customer_supply_instance, supply_items_instances, five_gallon_qty)
+        
+        # Mark customer supply and items as deleted
+        customer_supply_instance.delete()
+        supply_items_instances.delete()
+        
+    if CustomerCoupon.objects.filter(invoice_no=invoice.invoice_no).exists():
+        instance = CustomerCoupon.objects.get(invoice_no=invoice.invoice_no)
+        delete_coupon_recharge(instance.invoice_no)
+        
+    if CustomerOutstanding.objects.filter(invoice_no=invoice.invoice_no).exists():
+        # Retrieve outstanding linked to the invoice
+        outstanding = CustomerOutstanding.objects.get(invoice_no=invoice.invoice_no)
+        
+        # Reverse the outstanding invoice creation
+        outstanding.invoice_no = None
+        outstanding.save()
+        
+        # Adjust CustomerOutstandingReport
+        report = CustomerOutstandingReport.objects.get(customer=outstanding.customer, product_type='amount')
+        report.value -= invoice.amout_total  # Adjust based on your invoice amount field
+        report.save()
             
-            return HttpResponse(json.dumps(response_data), content_type='application/javascript')
+        invoice.is_deleted=True
+        invoice.save()
+        
+        InvoiceItems.objects.filter(invoice=invoice).update(is_deleted=True)
+        
+    response_data = {
+        "status": "true",
+        "title": "Successfully Deleted",
+        "message": "Invoice and associated data successfully deleted and reversed.",
+        "redirect": "true",
+        "redirect_url": reverse('invoice:invoice_list'),
+    }
+    
+    return HttpResponse(json.dumps(response_data), content_type='application/javascript')
 
-    except Invoice.DoesNotExist:
-        response_data = {
-            "status": "false",
-            "title": "Failed",
-            "message": "Invoice not found.",
-        }
-        return HttpResponse(json.dumps(response_data), status=status.HTTP_404_NOT_FOUND, content_type='application/javascript')
+    # except Invoice.DoesNotExist:
+    #     response_data = {
+    #         "status": "false",
+    #         "title": "Failed",
+    #         "message": "Invoice not found.",
+    #     }
+    #     return HttpResponse(json.dumps(response_data), status=status.HTTP_404_NOT_FOUND, content_type='application/javascript')
 
-    except CustomerOutstanding.DoesNotExist:
-        response_data = {
-            "status": "false",
-            "title": "Failed",
-            "message": "Customer outstanding record not found.",
-        }
-        return HttpResponse(json.dumps(response_data), status=status.HTTP_404_NOT_FOUND, content_type='application/javascript')
+    # except CustomerOutstanding.DoesNotExist:
+    #     response_data = {
+    #         "status": "false",
+    #         "title": "Failed",
+    #         "message": "Customer outstanding record not found.",
+    #     }
+    #     return HttpResponse(json.dumps(response_data), status=status.HTTP_404_NOT_FOUND, content_type='application/javascript')
 
-    except Exception as e:
-        response_data = {
-            "status": "false",
-            "title": "Failed",
-            "message": str(e),
-        }
-        return HttpResponse(json.dumps(response_data), status=status.HTTP_500_INTERNAL_SERVER_ERROR, content_type='application/javascript')
+    # except Exception as e:
+    #     response_data = {
+    #         "status": "false",
+    #         "title": "Failed",
+    #         "message": str(e),
+    #     }
+    #     return HttpResponse(json.dumps(response_data), status=status.HTTP_500_INTERNAL_SERVER_ERROR, content_type='application/javascript')
 
 @login_required
 def invoice(request,pk):

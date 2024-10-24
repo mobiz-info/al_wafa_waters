@@ -426,6 +426,7 @@ class Create_NonVisitReasonForm(forms.ModelForm):
         }
         
         
+        
 class UploadOutstandingForm(forms.Form):
     route = forms.ModelChoiceField(queryset=RouteMaster.objects.all(),label="Select Route",required=True,
             widget=forms.Select(attrs={

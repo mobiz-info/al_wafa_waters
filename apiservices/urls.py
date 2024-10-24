@@ -306,6 +306,7 @@ urlpatterns = [
     path('privacy-policy/', privacy),
     
     path('terms_and_conditions/', terms_and_conditions),
+    
     path('customers_coupons/<uuid:customer_id>/', CustomerCouponListAPIView.as_view(), name='customer-coupon-list'),
     
     path('credit-note-list/', CreditNoteListAPI.as_view(), name='credit_note_list'),
@@ -319,7 +320,7 @@ urlpatterns = [
     path('customer-outstandings-amount-report/', CustomersOutstandingAmountsAPI.as_view(), name='customers_outstandings_amount_reports'),
     path('customer-outstandings-bottles-report/', CustomersOutstandingBottlesAPI.as_view(), name='customers_outstandings_bottles_reports'),
     path('customer-outstandings-coupon-report/', CustomersOutstandingCouponsAPI.as_view(), name='customers_outstandings_coupons_reports'),
-    
+   
     path('salesman/', SalesmanListAPIView.as_view(), name='salesman-list'),
 
 ]

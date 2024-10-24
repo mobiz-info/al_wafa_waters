@@ -30,7 +30,7 @@ class EditVanForm(forms.ModelForm):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.fields['driver'].queryset = CustomUser.objects.filter(user_type='Driver')
-        self.fields['salesman'].queryset = CustomUser.objects.filter(user_type__in=['Sales Executive','Salesman'])
+        self.fields['salesman'].queryset = CustomUser.objects.filter(user_type='Salesman')
 
     class Meta:
         model = Van

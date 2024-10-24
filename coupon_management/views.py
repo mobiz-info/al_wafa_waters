@@ -14,7 +14,7 @@ from client_management.models import *
 from competitor_analysis.forms import CompetitorAnalysisFilterForm
 from master.functions import generate_form_errors
 from product.models import Staff_Orders_details
-from . models import *
+from .models import *
 from .forms import  *
 from accounts.models import CustomUser, Customers
 from master.models import EmirateMaster, BranchMaster, RouteMaster
@@ -24,7 +24,9 @@ from django.views import View
 from datetime import datetime
 from django.core.exceptions import ObjectDoesNotExist
 from django.http import JsonResponse, HttpResponse
-from django.db.models import Q
+from accounts.views import log_activity
+from django.db.models import Count, Q
+
 
 # Create your views here.
 def get_next_coupon_bookno(request):
@@ -34,7 +36,6 @@ def get_next_coupon_bookno(request):
     end_leaf_no = ""
     next_free_leaf_no = ""
     end_free_leaf_no = ""
-    coupon_type_freeleaf_count = CouponType.objects.get(pk=coupon_type).free_leaflets
     
     last_coupon = NewCoupon.objects.filter(coupon_type__pk=coupon_type)
     if last_coupon.exists():
@@ -66,7 +67,7 @@ def get_next_coupon_bookno(request):
             # next_leaf_no = f"{leaf_alphabetic_part}{leaf_next_numeric_part}"
             # end_leaf_no = f"{leaf_alphabetic_part}{leaf_last_numeric_part}"
             
-            if int(coupon_type_freeleaf_count) > 0 and (freeleafs:=FreeLeaflet.objects.filter(coupon=last_coupon)).exists():
+            if (freeleafs:=FreeLeaflet.objects.filter(coupon=last_coupon)).exists():
                 last_free_leaf_number = freeleafs.latest("created_date").leaflet_name
                 
                 # Split the alphanumeric leaflet number into alphabetic and numeric parts
@@ -76,20 +77,20 @@ def get_next_coupon_bookno(request):
 
                 # free_leaf_alphabetic_part, free_leaf_name_part = match.groups()
                 free_leaf_next_number = int(last_free_leaf_number) + 1
-                if int(coupon_type_freeleaf_count) > 1:
-                    free_leaf_last_number = free_leaf_next_number + int(coupon_type_freeleaf_count) - 1
+                if int(last_coupon.free_leaflets) > 1:
+                    free_leaf_last_number = free_leaf_next_number + int(last_coupon.free_leaflets) - 1
                 else:
                     free_leaf_last_number = free_leaf_next_number
                 
                 next_free_leaf_no = f"{free_leaf_next_number}"
                 end_free_leaf_no = f"{free_leaf_last_number}"
+
     data = {
         'next_coupon_bookno': next_coupon_bookno,
         "next_leaf_no": next_leaf_no,
         "end_leaf_no": end_leaf_no,
         "next_free_leaf_no": next_free_leaf_no,
         "end_free_leaf_no": end_free_leaf_no,
-        "coupon_type_freeleaf_count": coupon_type_freeleaf_count
         }
     return JsonResponse(data, safe=False)
 
@@ -167,9 +168,33 @@ def delete_couponType(request, coupon_type_id):
 
 #------------------------New Coupon
 def new_coupon(request):
-    all_coupon = NewCoupon.objects.all().order_by("-created_date")
-    coupon_stock_list = CouponStock.objects.all()  # Fetch all CouponStock instances
-    context = {'all_coupon': all_coupon, 'coupon_stock_list': coupon_stock_list}  # Add coupon_stock_list to context
+    filter_data = {}
+    
+    query = request.GET.get("q")
+    status_type = "company"
+    
+    if request.GET.get('status_type'):
+        status_type = request.GET.get('status_type')
+    
+    filter_data['status_type'] = status_type
+    
+    coupon_ids = CouponStock.objects.filter(coupon_stock=status_type).values_list("couponbook__pk")
+    instances = NewCoupon.objects.filter(pk__in=coupon_ids).order_by("-created_date")
+         
+    if query:
+
+        instances = instances.filter(
+            Q(book_num__icontains=query) |
+            Q(coupon_type__coupon_type_name__icontains=query)
+        )
+        title = "Coupon List - %s" % query
+        filter_data['q'] = query
+    
+    context = {
+        'instances': instances,
+        'filter_data': filter_data
+        }
+    
     return render(request, 'coupon_management/index_Newcoupon.html', context)
 
 def create_Newcoupon(request):
@@ -205,22 +230,22 @@ def create_Newcoupon(request):
                     created_by=request.user.id,
                     created_date=datetime.now(),
                 )
-            
-            if int(data.free_leaflets) > 0:
-                for f in free_leafs.split(', '):
-                    FreeLeaflet.objects.create(
-                        coupon=data,
-                        leaflet_number=data.free_leaflets,
-                        leaflet_name=f,
-                        created_by=request.user.id,
-                        created_date=datetime.now(),
-                    )
+                
+            for f in free_leafs.split(', '):
+                FreeLeaflet.objects.create(
+                    coupon=data,
+                    leaflet_number=data.free_leaflets,
+                    leaflet_name=f,
+                    created_by=request.user.id,
+                    created_date=datetime.now(),
+                )
             # Create CouponStock instance
             CouponStock.objects.create(
                 couponbook=data, 
                 coupon_stock='company', 
                 created_by=str(request.user.id)
                 )
+            
             product_instance=ProdutItemMaster.objects.get(product_name=data.coupon_type.coupon_type_name)
             if (stock_intances:=ProductStock.objects.filter(product_name=product_instance,branch=branch)).exists():
                 stock_intance = stock_intances.first()
@@ -391,9 +416,20 @@ def customer_stock(request):
 
     return render(request, 'coupon_management/customer_stock.html', {'coupenstock': coupenstock, 'route_li': route_li})
 
+@login_required
+def customer_stock_coupon_details(request,customer):
+    
+    customer_instance = Customers.objects.get(pk=customer)
+    
+    customer_manual_coupons = CustomerCouponItems.objects.filter(customer_coupon__customer=customer_instance)
+    
+    context = {
+        'customer_instance': customer_instance,
+        'customer_manual_coupons': customer_manual_coupons,
+    }
 
-
-
+    return render(request, 'coupon_management/available_coupon_details.html',context
+                  )
 
 
 
@@ -535,6 +571,7 @@ def customer_stock_pdf(request):
         # Return an empty HTTP response with a message indicating no data available
         return HttpResponse('No customer stock data available.')
     
+
 
 def redeemed_history(request):
     filter_data = {}

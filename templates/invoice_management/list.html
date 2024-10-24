@@ -26,24 +26,44 @@
 
                         <div class="ms-auto">
                             <a href="{% url 'invoice:invoice_customers' %}">
-                            <button type="button" class="btn btn-success btn-wave text-end d-flex me-4 my-auto"><i class="bi bi-plus-circle me-1"></i>Create</button>
-                        </a>
+                                <button type="button" class="btn btn-success btn-wave text-end d-flex me-4 my-auto"><i class="bi bi-plus-circle me-1"></i>Create</button>
+                            </a>
                         </div>
-                    </div>
-                    
-                    <div class="card-body" style="overflow: auto;">
-                        <div style="float:right;padding:10px 0px;">
-                            <form method="GET">
-                                <div class="input-group">
-                                    
-                                    {% comment %} <input type="date" name="from_date" class="form-control datetimepicker" value="{{ filter_data.from_date }}">
-                                    <input type="date" name="to_date" class="form-control datetimepicker" value="{{ filter_data.to_date }}"> {% endcomment %}
-                                    <input type="text" name="q" class="form-control" placeholder="Search ..." value="{{ filter_data.q }}">
-                                    <button type="submit" class="btn btn-primary"><i class="bi bi-search"></i>Search</button>
+                        <div class="mt">
+                            <form method="GET" action=".">
+                                <div class="row d-flex align-items-end justify-content-end">
+                                    <div class="col-4">
+                                        <label for="search">Search:</label>
+                                        <input type="text" class="form-control" id="search" name="q" value="{{ filter_data.q }}">
+                                    </div>
+                                    <div class="col-3">
+                                        <label for="date">Date:</label>
+                                        <input type="date" class="form-control" id="date" name="date" value="{{ filter_data.filter_date }}">
+                                    </div>
+                                    <div class="col-3">
+                                        <label for="product">Routes :</label>
+                                        <select name="route_name" class="form-select">
+                                            <option value="">All Routes</option>
+                                            {% for route in route_li %}
+                                            <option value="{{ route.route_name }}" {% if route.route_name == filter_data.route_name %}selected{% endif %}>
+                                                {{ route.route_name }}
+                                            </option>
+                                            {% endfor %}
+                                        </select>
+                                    </div>
+                                    <div class="col-auto">
+                                        <input type="submit" class="btn btn-primary btn-sm mx-1" value="Apply Filter">
+                                        {% if data_filter %}
+                                        <button type="button" class="btn btn-secondary btn-sm mx-1" onclick="resetFilters()" style="width:max-content">Reset Filter</button>
+                                        {% endif %}
+                                    </div>
                                 </div>
                             </form>
                         </div>
-                        <table  class="table table-bordered text-nowrap" style="width:100%">
+                    </div>
+
+                    <div class="card-body" style="overflow: auto;">
+                        <table class="table table-bordered text-nowrap" style="width:100%">
                             <thead>
                                 <tr>
                                 <th scope="col" class="text-center">Sl.No</th>
@@ -54,7 +74,7 @@
                                 <th scope="col" class="text-center">Net Taxeble</th>
                                 <th scope="col" class="text-center">VAT</th>
                                 <th scope="col" class="text-center">Total Amount</th>
-                                <th scope="col" class="text-center">Amount<br> Recieved</th>
+                                <th scope="col" class="text-center">Amount Recieved</th>
                                 <th scope="col" class="text-right">Actions</th>
                             </tr>
                             </thead>
@@ -64,9 +84,9 @@
                                 {% for instance in instances %}
                                 <tr>
                                     <td class="text-center">{{forloop.counter}}</td>
-                                    <td class="text-left">{{instance.created_date|date:'d/m/Y'}}</td>
+                                    <td class="text-left">{{instance.created_date}}</td>
                                     <td class="text-left">{{instance.invoice_no}}</td>
-                                    <td class="text-left">{{instance.customer.customer_name}}</td>
+                                    <td class="text-center">{{instance.customer.customer_name}}</td>
                                     <td class="text-center">{{instance.get_invoice_type_display}}</td>
                                     <td class="text-center">{{instance.net_taxable}}</td>
                                     <td class="text-center">{{instance.vat}}%</td>

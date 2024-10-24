@@ -139,7 +139,7 @@ class CustomerReturnItems(models.Model):
     customer_return = models.ForeignKey(CustomerReturn, on_delete=models.CASCADE,null=True,blank=True)
     product = models.ForeignKey('product.ProdutItemMaster', on_delete=models.CASCADE,null=True,blank=True)
     quantity = models.IntegerField(blank=True,null=True)
-    serialnumber = models.CharField(max_length=520, null=True, blank=True)
+    serialnumber = models.CharField(max_length=500, null=True, blank=True)
     amount = models.IntegerField(blank=True,null=True)
 
     def _str_(self):
@@ -260,10 +260,11 @@ class CustomerCouponItems(models.Model):
     
     class Meta:
         ordering = ('-customer_coupon__created_date',)
+        
     def __str__(self):
         return str(self.customer_coupon.customer)
     
-    # Function to get count of used coupon leaflets
+        # Function to get count of used coupon leaflets
     def get_used_leaflets(self):
         """Returns the count of used coupon leaflets for this sale."""
         return CouponLeaflet.objects.filter(coupon=self.coupon, used=True).count()
@@ -290,6 +291,7 @@ class CustomerCouponItems(models.Model):
             return None
         return None
     
+    
 class CustomerCouponStock(models.Model):
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     coupon_type_id = models.ForeignKey(CouponType, on_delete=models.CASCADE)
@@ -303,7 +305,7 @@ class CustomerCouponStock(models.Model):
     def __str__(self):
         return str(self.customer.customer_name)
     
-        # Function to get the total sold coupon books count by type (manual and digital)
+    # Function to get the total sold coupon books count by type (manual and digital)
     @classmethod
     def get_sold_coupons_by_type(cls):
         # Get sold coupons grouped by coupon_type and coupon_method
@@ -370,11 +372,11 @@ class CustomerOutstanding(models.Model):
     
     def get_outstanding_count(self):
         if self.product_type == 'amount':
-            return OutstandingAmount.objects.filter(customer_outstanding=self).aggregate(total_amount=Sum('amount'))['total_amount'] or 0
+            return OutstandingAmount.objects.get(customer_outstanding=self).amount
         if self.product_type == 'coupons':
             return OutstandingCoupon.objects.filter(customer_outstanding=self).aggregate(total_count=Sum('count'))['total_count'] or 0
         if self.product_type == 'emptycan':
-            return OutstandingProduct.objects.filter(customer_outstanding=self).aggregate(total_empty_bottle=Sum('empty_bottle'))['total_empty_bottle'] or 0
+            return OutstandingProduct.objects.get(customer_outstanding=self).empty_bottle
 
 class OutstandingAmount(models.Model):
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
@@ -423,44 +425,44 @@ class CustomerOutstandingReport(models.Model):
 
 
 class CustomerSupply(models.Model):
-        id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
-        customer = models.ForeignKey('accounts.Customers',on_delete = models.CASCADE)
-        salesman = models.ForeignKey('accounts.CustomUser', on_delete=models.CASCADE)
-        grand_total = models.DecimalField(default=0, max_digits=10, decimal_places=2)
-        discount = models.DecimalField(default=0, max_digits=10, decimal_places=2)
-        net_payable = models.DecimalField(default=0, max_digits=10, decimal_places=2)
-        vat = models.DecimalField(default=0, max_digits=10, decimal_places=2)
-        subtotal = models.DecimalField(default=0, max_digits=10, decimal_places=2)
-        amount_recieved = models.DecimalField(default=0, max_digits=10, decimal_places=2)
-        collected_empty_bottle = models.PositiveIntegerField(default=0)
-        allocate_bottle_to_pending = models.PositiveIntegerField(default=0)
-        allocate_bottle_to_custody = models.PositiveIntegerField(default=0)
-        allocate_bottle_to_paid = models.PositiveIntegerField(default=0)
-        allocate_bottle_to_free = models.PositiveIntegerField(default=0)
-        reference_number = models.CharField(max_length=100, null=True, blank=True)
-        invoice_no = models.CharField(max_length=100, null=True, blank=True)
-        
-        created_by = models.CharField(max_length=30, blank=True)
-        created_date = models.DateTimeField()
-        modified_by = models.CharField(max_length=20, null=True, blank=True)
-        modified_date = models.DateTimeField(auto_now=True ,blank=True, null=True)
-        is_edited = models.BooleanField(default=False)
-        
-        class Meta:
-            ordering = ('-created_date',)
-        def __str__(self):
-            return str(self.customer)
-        
-        def get_total_supply_qty(self):
-            return CustomerSupplyItems.objects.filter(customer_supply=self).aggregate(total_qty=Sum('quantity'))['total_qty'] or 0
-        
-        def total_coupon_recieved(self):
-            value_leaf = CustomerSupplyCoupon.objects.filter(customer_supply=self).aggregate(Count('leaf'))['leaf__count']
-            value_leaf += CustomerSupplyCoupon.objects.filter(customer_supply=self).aggregate(Count('free_leaf'))['free_leaf__count']
-            return {
-                "manual_coupon": value_leaf,
-                "digital_coupon": CustomerSupplyDigitalCoupon.objects.filter(customer_supply=self).aggregate(total_count=Sum('count'))['total_count'] or 0
-            }
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    customer = models.ForeignKey('accounts.Customers',on_delete = models.CASCADE)
+    salesman = models.ForeignKey('accounts.CustomUser', on_delete=models.CASCADE)
+    grand_total = models.DecimalField(default=0, max_digits=10, decimal_places=2)
+    discount = models.DecimalField(default=0, max_digits=10, decimal_places=2)
+    net_payable = models.DecimalField(default=0, max_digits=10, decimal_places=2)
+    vat = models.DecimalField(default=0, max_digits=10, decimal_places=2)
+    subtotal = models.DecimalField(default=0, max_digits=10, decimal_places=2)
+    amount_recieved = models.DecimalField(default=0, max_digits=10, decimal_places=2)
+    collected_empty_bottle = models.PositiveIntegerField(default=0)
+    allocate_bottle_to_pending = models.PositiveIntegerField(default=0)
+    allocate_bottle_to_custody = models.PositiveIntegerField(default=0)
+    allocate_bottle_to_paid = models.PositiveIntegerField(default=0)
+    allocate_bottle_to_free = models.PositiveIntegerField(default=0)
+    reference_number = models.CharField(max_length=100, null=True, blank=True)
+    invoice_no = models.CharField(max_length=100, null=True, blank=True)
+    
+    created_by = models.CharField(max_length=30, blank=True)
+    created_date = models.DateTimeField()
+    modified_by = models.CharField(max_length=20, null=True, blank=True)
+    modified_date = models.DateTimeField(auto_now=True ,blank=True, null=True)
+    is_edited = models.BooleanField(default=False)
+    
+    class Meta:
+        ordering = ('-created_date',)
+    def __str__(self):
+        return str(self.customer)
+    
+    def get_total_supply_qty(self):
+        return CustomerSupplyItems.objects.filter(customer_supply=self).aggregate(total_qty=Sum('quantity'))['total_qty'] or 0
+    
+    def total_coupon_recieved(self):
+        value_leaf = CustomerSupplyCoupon.objects.filter(customer_supply=self).aggregate(Count('leaf'))['leaf__count']
+        value_leaf += CustomerSupplyCoupon.objects.filter(customer_supply=self).aggregate(Count('free_leaf'))['free_leaf__count']
+        return {
+            "manual_coupon": value_leaf,
+            "digital_coupon": CustomerSupplyDigitalCoupon.objects.filter(customer_supply=self).aggregate(total_count=Sum('count'))['total_count'] or 0
+        }
             
 
 class CustomerSupplyItems(models.Model):
@@ -616,6 +618,7 @@ class NonvisitReport(models.Model):
     def __str__(self):
         return f'{self.customer} - {self.salesman} - {self.reason}'
     
+    
 class CustomerCart(models.Model):
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     customer = models.ForeignKey(Customers, on_delete=models.CASCADE, null=True, blank=True)
@@ -641,25 +644,3 @@ class CustomerCartItems(models.Model):
     
     def __str__(self):
         return f"{self.product} - Quantity: {self.quantity}"
-    
-
-class DialyCustomers(models.Model):
-    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
-    date = models.DateField()
-    customer = models.ForeignKey(Customers, on_delete=models.CASCADE)
-    route = models.ForeignKey('master.RouteMaster', on_delete=models.CASCADE)
-    qty = models.DecimalField(default=0, max_digits=10, decimal_places=2)
-    is_emergency = models.BooleanField(default=False)
-    is_supply = models.BooleanField(default=False)
-    
-    def __str__(self):
-        return f"{self.customer.customer_name} - Quantity: {self.qty}"
-    
-
-class InactiveCustomers(models.Model):
-    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
-    customer = models.ForeignKey(Customers, on_delete=models.CASCADE)
-    inactive_days = models.IntegerField(default=0)
-    
-    def __str__(self):
-        return f"{self.customer.customer_name} - In Active Days: {self.inactive_days}"

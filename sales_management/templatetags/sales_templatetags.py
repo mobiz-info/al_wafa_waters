@@ -70,10 +70,3 @@ def get_total_returned_quantity(date, van):
                customer_return__created_date__date=date
             ).aggregate(total_return=Sum('quantity'))['total_return'] or 0
         return total_return
-    
-@register.filter
-def subtract(value, arg):
-    try:
-        return float(value) - float(arg)
-    except (ValueError, TypeError):
-        return 0 

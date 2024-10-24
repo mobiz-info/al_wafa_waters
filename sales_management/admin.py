@@ -1,4 +1,3 @@
-import uuid
 from django.contrib import admin
 from . models import *
 
@@ -6,4 +5,3 @@ from . models import *
 admin.site.register(CollectionPayment)
 admin.site.register(CollectionItems)
 admin.site.register(CollectionCheque)
-admin.site.register(Receipt)

@@ -25,19 +25,8 @@
                         <div style="float:right;padding:10px 0px">
                             <form method="GET">
                                 <div class="input-group">
-                                    <!-- Select box for filtering days -->
-                                    <select name="days_filter" id="days_filter" class="form-select">
-                                        <option value="">Select Days</option>
-                                        <option value="10" {% if filter_data.days_filter == '10' %}selected{% endif %}>10 Days</option>
-                                        <option value="15" {% if filter_data.days_filter == '15' %}selected{% endif %}>15 Days</option>
-                                        <option value="30" {% if filter_data.days_filter == '30' %}selected{% endif %}>30 Days</option>
-                                        <option value="custom" {% if filter_data.days_filter == 'custom' %}selected{% endif %}>Custom Date</option>
-                                    </select>
-                            
-                                    <!-- Custom Date Inputs (only shown if 'custom' is selected) -->
-                                    <input type="date" name="from_date" class="form-control" value="{{ filter_data.from_date }}" id="from_date" {% if filter_data.days_filter != 'custom' %}style="display:none;"{% endif %}>
-                                    <input type="date" name="to_date" class="form-control" value="{{ filter_data.to_date }}" id="to_date" {% if filter_data.days_filter != 'custom' %}style="display:none;"{% endif %}>
-                            
+                                    <input type="date" name="from_date" class="form-control" value="{{ filter_data.from_date }}">
+                                    <input type="date" name="to_date" class="form-control" value="{{ filter_data.to_date }}">
                                     <select name="route_name" class="form-select">
                                         <option value="">All Routes</option>
                                         {% for route in routes_instances %}
@@ -46,7 +35,6 @@
                                             </option>
                                         {% endfor %}
                                     </select>
-                                    
                                     <input type="text" name="q" class="form-control" placeholder="Search ..." value="{{ q }}">
                                     <button type="submit" class="btn btn-primary">
                                         <i class="bi bi-search"></i> Search
@@ -61,15 +49,13 @@
                                     <th style="text-align:center;" scope="col">Customer ID</th>
                                     <th style="text-align:center;" scope="col">Customer Name</th>
                                     <th style="text-align:center;" scope="col">Route</th>
-                                    <th style="text-align:center;" scope="col">Mobile No</th>
+                                    <th style="text-align:center;" scope="col">Building Name/<br>House No</th>
+                                    <th style="text-align:center;" scope="col">Next Visit <br>Date</th>
+                                    <th style="text-align:center;" scope="col">Bottle Stock</th>
                                     <th style="text-align:center;" scope="col">Sales Type</th>
-                                    <th style="text-align:center;" scope="col">Inactive Days</th>
-                                    <th style="text-align:center;" scope="col">Status</th>
                                 </tr>
                             </thead>
                             <tbody>
-                                {% load el_pagination_tags %}
-                                {% paginate 20 inactive_customers %}
                                 {% for customer in inactive_customers %}
                                     <tr>
                                         <td style="text-align:center;">{{ forloop.counter }}</td>
@@ -78,54 +64,22 @@
                                             <a href="{% url 'customer_complaint' customer.pk %}" aria-label="anchor">{{ customer.customer_name }}</a>
                                         </td>
                                         <td style="text-align:left;">{{ customer.routes.route_name }}</td>
-                                        <td style="text-align:left;">{{ customer.mobile_no }}</td>
-                                        
+                                        <td style="text-align:left;">{{ customer.building_name }},<br> {{ customer.door_house_no }}</td>
+                                        {% get_next_visit_day customer.pk as next_visit_date %}
+                                        <td style="text-align:left;">{{ next_visit_date }}</td>
+                                        {% bottle_stock customer.pk as total_bottle_count %}
+                                        <td style="text-align:left;">{{ total_bottle_count }}</td>
                                         <td style="text-align:left;">{{ customer.sales_type }}</td>
-                                        <td style="text-align:center;">{{ customer.days_since_last_supply }}</td>
-                                        <td style="text-align:left;">
-                                            {% if customer.on_vacation %}
-                                                Vacation
-                                            {% else %}
-                                                Inactive
-                                            {% endif %}
-                                        </td>
+                                        
                                     </tr>
                                 {% endfor %}
                             </tbody>
                         </table>
                         
                     </div>
-                    {% get_pages %}
-                    <div class="clearfix"></div>
-                    <div class="row pagi my-3">
-                        <div class="col-sm-6 col-xs-6 tot my-pagination">
-                            <div class="m-t-10 text-start">
-                                Showing {{title}}
-                                <span class="current_page_index">{{ pages.current_start_index }}</span> - <span
-                                class="current_end_status">{{ pages.current_end_index }}</span> of <span
-                                class="total_count">{{ pages.total_count }}</span>
-                            </div>
-                        </div>
-                        <div class="col-sm-6 col-xs-6 text-end pagination-btn-div">{% show_pages %}</div>
-                    </div>    
                 </div>
             </div>
         </div>
     </div>
 </div>
-
-<script>
-    // Show or hide the custom date fields based on the selected option
-    document.getElementById('days_filter').addEventListener('change', function () {
-        const fromDate = document.getElementById('from_date');
-        const toDate = document.getElementById('to_date');
-        if (this.value === 'custom') {
-            fromDate.style.display = 'block';
-            toDate.style.display = 'block';
-        } else {
-            fromDate.style.display = 'none';
-            toDate.style.display = 'none';
-        }
-    });
-</script>
 {% endblock %}
