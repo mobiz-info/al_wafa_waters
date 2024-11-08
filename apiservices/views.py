@@ -3300,10 +3300,10 @@ class create_customer_supply(APIView):
                             if request.data.get('coupon_method') == "manual" :
                                 collected_coupon_ids = request.data.get('collected_coupon_ids')
                                 
-                                customer_supply_coupon = CustomerSupplyCoupon.objects.create(
-                                    customer_supply=customer_supply,
-                                )
                                 for c_id in collected_coupon_ids:
+                                    customer_supply_coupon = CustomerSupplyCoupon.objects.create(
+                                        customer_supply=customer_supply,
+                                    )
                                     if CouponLeaflet.objects.filter(pk=c_id).exists():
                                         leaflet_instance = CouponLeaflet.objects.get(pk=c_id)
                                         customer_supply_coupon.leaf.add(leaflet_instance)
@@ -4754,17 +4754,11 @@ class customer_outstanding(APIView):
 
         # Loop through each customer to calculate totals
         for customer in customers:
-            outstanding_amount = OutstandingAmount.objects.filter(
-                customer_outstanding__customer__pk=customer.pk, 
-                customer_outstanding__created_date__date__lte=date
-            ).aggregate(total_amount=Sum('amount'))['total_amount'] or 0
+            if outstanding_amount > collection_amount:
+                outstanding_amount = outstanding_amount - collection_amount
+            else:
+                outstanding_amount = collection_amount - outstanding_amount
             
-            collection_amount = CollectionPayment.objects.filter(
-                customer__pk=customer.pk, 
-                created_date__date__lte=date
-            ).aggregate(total_amount_received=Sum('amount_received'))['total_amount_received'] or 0
-            
-            outstanding_amount = max(outstanding_amount - collection_amount, 0)
             total_outstanding_amount += outstanding_amount
             
             total_bottles = OutstandingProduct.objects.filter(
@@ -9671,3 +9665,59 @@ class SalesmanListAPIView(APIView):
 
         # Return the serialized data with a 200 OK response
         return Response(serializer.data, status=status.HTTP_200_OK)
+    
+    
+class CustomerRegistrationRequestView(APIView):
+    def get(self, request, *args, **kwargs):
+        instances = CustomerRegistrationRequest.objects.all()
+        serializer = CustomerRegistrationRequestSerializer(instances,many=True)
+        
+        status_code = status.HTTP_200_OK
+        response_data = {
+            "status": status_code,
+            "data": serializer.data,
+        }
+        
+        return Response(response_data, status=status_code)
+    
+    def post(self, request, *args, **kwargs):
+        serializer = CustomerRegistrationRequestSerializer(data=request.data, context={'request': request})
+        try:
+            with transaction.atomic():
+                if serializer.is_valid():
+                    instance = serializer.save(
+                        created_date=datetime.today(),
+                    )                    
+                    status_code = status.HTTP_201_CREATED
+                    response_data = {
+                        "StatusCode": status_code,
+                        "status": status_code,
+                        "data": serializer.data,
+                    }
+                else:
+                    status_code = status.HTTP_400_BAD_REQUEST
+                    response_data = {
+                        "StatusCode": status_code,
+                        "status": status_code,
+                        "message": serializer.errors,
+                    }
+                        
+        except IntegrityError as e:
+            status_code = status.HTTP_400_BAD_REQUEST
+            response_data = {
+                "StatusCode": 400,
+                "status": status_code,
+                "title": "Failed",
+                "message": str(e),
+            }
+
+        except Exception as e:
+            status_code = status.HTTP_400_BAD_REQUEST
+            response_data = {
+                "StatusCode": 400,
+                "status": status_code,
+                "title": "Failed",
+                "message": str(e),
+            }
+        
+        return Response(response_data, status=status_code)
