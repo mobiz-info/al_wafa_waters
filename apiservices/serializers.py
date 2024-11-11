@@ -1867,6 +1867,12 @@ class OffloadRequestVanStockCouponsSerializer(serializers.ModelSerializer):
         fields = ['product_name', 'offloaded_quantity']        
         
 class TotalCouponsSerializer(serializers.Serializer):
+    created_date = serializers.DateField(format='%Y-%m-%d', required=False)    
+    customer_id = serializers.CharField()
+    customer_name = serializers.CharField()
+    custom_id = serializers.CharField()
+    building_name = serializers.CharField()
+    address = serializers.CharField()
     total_digital_coupons_consumed = serializers.IntegerField()
     total_manual_coupons_consumed = serializers.IntegerField()
  
