@@ -3,38 +3,31 @@ import json
 import base64
 import datetime
 
+from django.views import View
+from django.db.models import Q, Sum, Count
+from django.urls import reverse
 from django.utils import timezone
 from django.shortcuts import render
-from django.contrib.auth.decorators import login_required
 from django.contrib import messages
-from django.shortcuts import render, redirect,HttpResponse,get_object_or_404
-from django.views import View
-from django.contrib.auth.models import User
-from django.utils.decorators import method_decorator
-from django.views.decorators.csrf import csrf_exempt
+from django.db import transaction, IntegrityError
 from django.http import JsonResponse, HttpResponse
-from django.contrib.auth.hashers import make_password, check_password
+from django.utils.decorators import method_decorator
+from django.contrib.auth.decorators import login_required
 from django.contrib.auth import authenticate, login, logout
-from django.shortcuts import render, redirect
-from django.contrib import messages
-from django.contrib.auth.views import LoginView
-from django.urls import reverse
+from django.contrib.auth.hashers import make_password, check_password
+from django.shortcuts import render, redirect,HttpResponse,get_object_or_404
 
-from competitor_analysis.forms import CompetitorAnalysisFilterForm
-from master.functions import generate_form_errors, get_custom_id
+import pandas as pd
 from .forms import *
 from .models import *
-from django.db.models import Q
-import pandas as pd
 from io import BytesIO
-from reportlab.pdfgen import canvas
-from datetime import datetime, timedelta
-from client_management.models import *
-from django.db.models import Q, Sum, Count
 from customer_care.models import *
+from client_management.models import *
+from datetime import datetime, timedelta
 from apiservices.views import find_customers
-from van_management.models import Van_Routes,Van,VanProductStock
 from django.contrib.auth import update_session_auth_hash
+from van_management.models import Van_Routes,Van,VanProductStock
+from master.functions import generate_form_errors, get_custom_id
 
 # Create your views here.
 def user_login(request):
@@ -515,26 +508,45 @@ def create_customer(request):
     template_name = 'accounts/create_customer.html'
     form = CustomercreateForm(branch)
     context = {"form":form}
-    # try:
     if request.method == 'POST':
+        
         form = CustomercreateForm(branch,data = request.POST)
+        print(form)
         context = {"form":form}
         if form.is_valid():
-            data = form.save(commit=False)
-            data.created_by = str(request.user)
-            data.created_date = datetime.now()
-            data.emirate = data.location.emirate
-            branch_id=request.user.branch_id.branch_id
-            branch = BranchMaster.objects.get(branch_id=branch_id)
-            data.branch_id = branch
-            data.custom_id = get_custom_id(Customers)
-            data.save()
-            Staff_Day_of_Visit.objects.create(customer = data)
-            
-            log_activity(
-                created_by=request.user,
-                description=f"Created customer {data.custom_id} - {data.customer_name}"
-            )
+            try:
+                with transaction.atomic():
+                    data = form.save(commit=False)
+                    data.created_by = str(request.user)
+                    data.created_date = datetime.now()
+                    data.emirate = data.location.emirate
+                    branch_id=request.user.branch_id.branch_id
+                    branch = BranchMaster.objects.get(branch_id=branch_id)
+                    data.branch_id = branch
+                    data.custom_id = get_custom_id(Customers)
+                    data.save()
+                    Staff_Day_of_Visit.objects.create(customer = data)
+                    
+                    log_activity(
+                        created_by=request.user,
+                        description=f"Created customer {data.custom_id} - {data.customer_name}"
+                    )
+                    
+            except IntegrityError as e:
+                # Handle database integrity error
+                response_data = {
+                    "status": "false",
+                    "title": "Failed",
+                    "message": str(e),
+                }
+
+            except Exception as e:
+                # Handle other exceptions
+                response_data = {
+                    "status": "false",
+                    "title": "Failed",
+                    "message": str(e),
+                }
             
             messages.success(request, 'Customer Created successfully!')
             return redirect('customers')
