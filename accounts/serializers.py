@@ -1,5 +1,7 @@
 from rest_framework import serializers
 from . models import *
+from client_management.models import CustomerSupplyItems
+from django.db.models import Sum
 
 class CustomUserSerializers(serializers.ModelSerializer):
     class Meta :
