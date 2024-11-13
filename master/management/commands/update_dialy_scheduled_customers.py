@@ -22,22 +22,15 @@ class Command(BaseCommand):
             
             todays_customers = []
             
-            customers = Customers.objects.filter(routes=route, is_calling_customer=False)
+            vocation_customer_ids = Vacation.objects.filter(start_date__gte=date,end_date__lte=date).values_list('customer__pk')
+            
+            customers = Customers.objects.filter(routes=route, is_calling_customer=False).exclude(pk__in=vocation_customer_ids)
             for customer in customers:
                 if customer.visit_schedule:
                     for day, weeks in customer.visit_schedule.items():
                         if str(day_of_week) == str(day) and str(week_number) in weeks:
                             todays_customers.append(customer)
 
-            # Fetch vacations within the date range
-            vacations = Vacation.objects.filter(
-                Q(start_date__lte=date) & Q(end_date__gte=date),
-                customer__in=todays_customers
-            )
-
-            # Remove customers on vacation from todays_customers list
-            todays_customers = [customer for customer in todays_customers if customer not in vacations.values_list('customer', flat=True)]
-            
             for today_customer in todays_customers:
                 today_customer,create = DialyCustomers.objects.get_or_create(
                     date=date,

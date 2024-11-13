@@ -60,7 +60,7 @@
                                 <th style="text-align:center;">Customer Type</th>
                                 <th style="text-align:center;">Building No</th>
                                 <th style="text-align:center;">Route</th>
-                                <th style="text-align:center;">Outstanding Type</th>
+                                {% comment %} <th style="text-align:center;">Outstanding Type</th> {% endcomment %}
                                 <th style="text-align:center;">Count</th>
                             
                             </tr>
@@ -76,7 +76,7 @@
                                 <td style="text-align:center;">{{ item.customer.sales_type }}</td>
                                 <td style="text-align:center;">{{ item.customer.building_name }}</td>
                                 <td style="text-align:center;">{{ item.customer.routes.route_name }}</td>
-                                <td style="text-align:center;">{{ item.get_product_type_display }}</td>
+                                {% comment %} <td style="text-align:center;">{{ item.get_product_type_display }}</td> {% endcomment %}
                                 <td style="text-align:center;">{{ item.get_outstanding_count }}</td>
                             </tr>
                             {% endfor %}

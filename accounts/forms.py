@@ -187,7 +187,6 @@ class CustomerEditForm(forms.ModelForm):
         }
 
 
-
 class Day_OfVisit_Form(forms.ModelForm):
     class Meta:
         model = Staff_Day_of_Visit
@@ -216,7 +215,6 @@ class VisitScheduleForm(forms.Form):
     week2 = forms.CharField(required=False)
     week3 = forms.CharField(required=False)
     week4 = forms.CharField(required=False)
-    
     
 from django.contrib.auth import get_user_model
 from django.contrib.auth.forms import SetPasswordForm

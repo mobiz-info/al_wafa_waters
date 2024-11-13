@@ -14,7 +14,7 @@ from client_management.models import *
 from competitor_analysis.forms import CompetitorAnalysisFilterForm
 from master.functions import generate_form_errors
 from product.models import Staff_Orders_details
-from .models import *
+from . models import *
 from .forms import  *
 from accounts.models import CustomUser, Customers
 from master.models import EmirateMaster, BranchMaster, RouteMaster
@@ -24,9 +24,7 @@ from django.views import View
 from datetime import datetime
 from django.core.exceptions import ObjectDoesNotExist
 from django.http import JsonResponse, HttpResponse
-from accounts.views import log_activity
-from django.db.models import Count, Q
-
+from django.db.models import Q
 
 # Create your views here.
 def get_next_coupon_bookno(request):
@@ -36,6 +34,7 @@ def get_next_coupon_bookno(request):
     end_leaf_no = ""
     next_free_leaf_no = ""
     end_free_leaf_no = ""
+    coupon_type_freeleaf_count = CouponType.objects.get(pk=coupon_type).free_leaflets
     
     last_coupon = NewCoupon.objects.filter(coupon_type__pk=coupon_type)
     if last_coupon.exists():
@@ -67,7 +66,7 @@ def get_next_coupon_bookno(request):
             # next_leaf_no = f"{leaf_alphabetic_part}{leaf_next_numeric_part}"
             # end_leaf_no = f"{leaf_alphabetic_part}{leaf_last_numeric_part}"
             
-            if (freeleafs:=FreeLeaflet.objects.filter(coupon=last_coupon)).exists():
+            if int(coupon_type_freeleaf_count) > 0 and (freeleafs:=FreeLeaflet.objects.filter(coupon=last_coupon)).exists():
                 last_free_leaf_number = freeleafs.latest("created_date").leaflet_name
                 
                 # Split the alphanumeric leaflet number into alphabetic and numeric parts
@@ -77,20 +76,20 @@ def get_next_coupon_bookno(request):
 
                 # free_leaf_alphabetic_part, free_leaf_name_part = match.groups()
                 free_leaf_next_number = int(last_free_leaf_number) + 1
-                if int(last_coupon.free_leaflets) > 1:
-                    free_leaf_last_number = free_leaf_next_number + int(last_coupon.free_leaflets) - 1
+                if int(coupon_type_freeleaf_count) > 1:
+                    free_leaf_last_number = free_leaf_next_number + int(coupon_type_freeleaf_count) - 1
                 else:
                     free_leaf_last_number = free_leaf_next_number
                 
                 next_free_leaf_no = f"{free_leaf_next_number}"
                 end_free_leaf_no = f"{free_leaf_last_number}"
-
     data = {
         'next_coupon_bookno': next_coupon_bookno,
         "next_leaf_no": next_leaf_no,
         "end_leaf_no": end_leaf_no,
         "next_free_leaf_no": next_free_leaf_no,
         "end_free_leaf_no": end_free_leaf_no,
+        "coupon_type_freeleaf_count": coupon_type_freeleaf_count
         }
     return JsonResponse(data, safe=False)
 
@@ -230,22 +229,22 @@ def create_Newcoupon(request):
                     created_by=request.user.id,
                     created_date=datetime.now(),
                 )
-                
-            for f in free_leafs.split(', '):
-                FreeLeaflet.objects.create(
-                    coupon=data,
-                    leaflet_number=data.free_leaflets,
-                    leaflet_name=f,
-                    created_by=request.user.id,
-                    created_date=datetime.now(),
-                )
+            
+            if int(data.free_leaflets) > 0:
+                for f in free_leafs.split(', '):
+                    FreeLeaflet.objects.create(
+                        coupon=data,
+                        leaflet_number=data.free_leaflets,
+                        leaflet_name=f,
+                        created_by=request.user.id,
+                        created_date=datetime.now(),
+                    )
             # Create CouponStock instance
             CouponStock.objects.create(
                 couponbook=data, 
                 coupon_stock='company', 
                 created_by=str(request.user.id)
                 )
-            
             product_instance=ProdutItemMaster.objects.get(product_name=data.coupon_type.coupon_type_name)
             if (stock_intances:=ProductStock.objects.filter(product_name=product_instance,branch=branch)).exists():
                 stock_intance = stock_intances.first()
@@ -572,7 +571,6 @@ def customer_stock_pdf(request):
         return HttpResponse('No customer stock data available.')
     
 
-
 def redeemed_history(request):
     filter_data = {}
     query = request.GET.get("q", "").strip()  # Get the search query
@@ -689,3 +687,47 @@ def print_redeemed_history(request):
     }
 
     return render(request, 'coupon_management/print_redeemed_history.html', context)
+def coupon_recharge_list(request):
+    # Get start and end dates from request parameters if available
+    start_date = request.GET.get('start_date')
+    end_date = request.GET.get('end_date')
+    query = request.GET.get("q")
+    payment_type = request.GET.get('payment_type', '')
+    coupon_method = request.GET.get('coupon_method', '')
+
+    
+    coupon_customer =CustomerCoupon.objects.all().order_by('-created_date')
+    
+    if start_date and end_date:
+        # If both dates are provided, filter between them
+        coupon_customer = coupon_customer.filter(created_date__range=(start_date, end_date))
+    if query:
+        coupon_customer = coupon_customer.filter(
+            Q(customer__custom_id__icontains=query) |
+            Q(customer__customer_name__icontains=query) |
+            Q(customer__mobile_no__icontains=query) |
+            Q(customer__location__location_name__icontains=query) |
+            Q(customer__building_name__icontains=query)
+        )
+    # Apply payment_type and coupon_method filters
+    if payment_type:
+        coupon_customer = coupon_customer.filter(payment_type=payment_type)
+    if coupon_method:
+        coupon_customer = coupon_customer.filter(coupon_method=coupon_method)
+
+    # Pass filter_data to keep the form values intact
+    filter_data = {
+        'start_date': start_date,
+        'end_date': end_date,
+        'q': query,
+        'payment_type': payment_type,
+        'coupon_method': coupon_method,
+
+    }
+    context={
+        'coupon_customer':coupon_customer,
+        'filter_data': filter_data,
+
+}
+
+    return render(request,'coupon_management/coupon_recharge_list.html', context)
