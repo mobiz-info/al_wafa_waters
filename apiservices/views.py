@@ -3090,11 +3090,16 @@ class CustodyCustomAPIView(APIView):
 class supply_product(APIView):
     def get(self, request, *args, **kwargs):
         route_id = request.GET.get("route_id")
+        customer_id = request.query_params.get("customer_id")
+
         customers = Customers.objects.all()
 
         if route_id:
             customers = customers.filter(routes__pk=route_id)
-
+            
+        if customer_id:
+            customers = customers.filter(pk=customer_id)
+            
         serializer = SupplyItemCustomersSerializer(customers, many=True, context={"request": request})
 
         status_code = status.HTTP_200_OK
@@ -4392,19 +4397,21 @@ class CustodyCustomItemListAPI(APIView):
     authentication_classes = [BasicAuthentication]
     permission_classes = [IsAuthenticated]
     
-    def get(self,request,id=None):
-        if not id:
-            custody_customer_ids = CustomerCustodyStock.objects.filter(customer__sales_staff=request.user).values_list("customer__customer_id")
-            customers =  Customers.objects.filter(pk__in=custody_customer_ids)
-        else:
-            custody_customer_ids = CustomerCustodyStock.objects.filter(customer__pk=id).values_list("customer__customer_id")
-            customers =  Customers.objects.filter(pk__in=custody_customer_ids)
+    def get(self, request):
+        customer_id = request.query_params.get('customer_id')
         
-        if customers:
-            serializer = CustomerCustodyStockSerializer(customers, many=True)
-            return Response({'status': True,'data':serializer.data,'message':'data fetched successfully'},status=status.HTTP_200_OK)
+        if customer_id:
+            custody_customer_ids = CustomerCustodyStock.objects.filter(customer__pk=customer_id).values_list("customer__customer_id", flat=True)
+            customers = Customers.objects.filter(pk__in=custody_customer_ids)
         else:
-            return Response({'status': True,'data':[],'message':'No custody items'},status=status.HTTP_200_OK)
+            custody_customer_ids = CustomerCustodyStock.objects.filter(customer__sales_staff=request.user).values_list("customer__customer_id", flat=True)
+            customers = Customers.objects.filter(pk__in=custody_customer_ids)
+        
+        if customers.exists():
+            serializer = CustomerCustodyStockSerializer(customers, many=True)
+            return Response({'status': True, 'data': serializer.data, 'message': 'Data fetched successfully'}, status=status.HTTP_200_OK)
+        else:
+            return Response({'status': True, 'data': [], 'message': 'No custody items'}, status=status.HTTP_200_OK)
 
 
 class CustodyItemReturnAPI(APIView):
@@ -4728,6 +4735,7 @@ class customer_outstanding(APIView):
     def get(self, request, *args, **kwargs):
         date = request.GET.get('date')
         route_id = request.GET.get("route_id")
+        customer_id = request.query_params.get("customer_id")
         
         if date:
             date = datetime.strptime(date, '%Y-%m-%d').date()
@@ -4742,6 +4750,9 @@ class customer_outstanding(APIView):
             
         customers = Customers.objects.filter(routes__pk=route_id)
 
+        if customer_id:
+            customers = customers.filter(pk=customer_id)
+            
         serialized_data = CustomerOutstandingSerializer(customers, many=True, context={"request": request, "date_str": date})
 
         # Filter out customers with zero amount, empty can, and coupons
@@ -4754,10 +4765,23 @@ class customer_outstanding(APIView):
 
         # Loop through each customer to calculate totals
         for customer in customers:
-            if outstanding_amount > collection_amount:
-                outstanding_amount = outstanding_amount - collection_amount
-            else:
-                outstanding_amount = collection_amount - outstanding_amount
+            outstanding_amount = OutstandingAmount.objects.filter(
+                customer_outstanding__customer__pk=customer.pk, 
+                customer_outstanding__created_date__date__lte=date
+            ).aggregate(total_amount=Sum('amount'))['total_amount'] or 0
+            
+            collection_amount = CollectionPayment.objects.filter(
+                customer__pk=customer.pk, 
+                created_date__date__lte=date
+            ).aggregate(total_amount_received=Sum('amount_received'))['total_amount_received'] or 0
+            
+            # outstanding_amount = max(outstanding_amount - collection_amount, 0)
+            outstanding_amount = outstanding_amount - collection_amount
+            
+            # if outstanding_amount > collection_amount:
+            #     outstanding_amount = outstanding_amount - collection_amount
+            # else:
+            #     outstanding_amount = collection_amount - outstanding_amount
             
             total_outstanding_amount += outstanding_amount
             
@@ -4838,8 +4862,13 @@ class CustomerCouponListAPI(APIView):
         customers = Customers.objects.filter(sales_type="CASH COUPON")
 
         route_id = request.GET.get("route_id")
+        customer_id = request.query_params.get("customer_id")
+        
         if route_id:
             customers = customers.filter(routes__pk=route_id)
+        if customer_id:
+            customers = customers.filter(pk=customer_id)
+            
         serializer = CustomerDetailSerializer(customers, many=True, context={'request': request})
 
         return Response(serializer.data)
@@ -4884,11 +4913,12 @@ class CollectionAPI(APIView):
                 'status': False,
                 'message': 'User ID is required!'
             }, status=status.HTTP_400_BAD_REQUEST)
-
+        customer_id = request.query_params.get('customer_id')
         # Filter CustomerSupply objects based on the user
         invoices_customer_pk = Invoice.objects.filter(invoice_status="non_paid",is_deleted=False).exclude(amout_total=0).values_list("customer__pk")
         collection = Customers.objects.filter(pk__in=invoices_customer_pk,sales_staff=user)
-
+        if customer_id:
+            collection = collection.filter(pk=customer_id)
         if collection.exists():
             collection_serializer = CollectionCustomerSerializer(collection, many=True)
             return Response({
@@ -5510,6 +5540,7 @@ class RedeemedHistoryAPI(APIView):
         user_id = request.user.id
         start_date = request.GET.get('start_date')
         end_date = request.GET.get('end_date')
+        customer_id = request.query_params.get('customer_id')
         
         if start_date:
             start_date = datetime.strptime(start_date, '%Y-%m-%d').date()
@@ -5520,6 +5551,9 @@ class RedeemedHistoryAPI(APIView):
         
         supply_instances = CustomerSupply.objects.filter(created_date__date__gte=start_date,created_date__date__lte=end_date,customer__sales_type="CASH COUPON")
 
+        if customer_id:
+            supply_instances = supply_instances.filter(customer__pk=customer_id)
+            
         customer_coupon_counts = []
         for supply_instance in supply_instances:
             digital_count = CustomerSupplyDigitalCoupon.objects.filter(
@@ -7048,12 +7082,19 @@ class CustomerWiseCouponSaleAPIView(APIView):
         return Response(response_data, status=status.HTTP_200_OK)
     
 class TotalCouponsConsumedView(APIView):
-    def get(self, request):
+    
+    authentication_classes = [BasicAuthentication]
+    permission_classes = [IsAuthenticated]
+    
+    def post(self, request):
         salesman = request.user
-        
+
+        # Fetch query parameters
         start_date_str = request.data.get('start_date')
         end_date_str = request.data.get('end_date')
+        customer_id = request.data.get('customer_id', None)
         
+        # Date conversion
         if not (start_date_str and end_date_str):
             start_date = datetime.today().date()
             end_date = datetime.today().date()
@@ -7061,35 +7102,61 @@ class TotalCouponsConsumedView(APIView):
             start_date = datetime.strptime(start_date_str, '%Y-%m-%d')
             end_date = datetime.strptime(end_date_str, '%Y-%m-%d')
         
-        # Aggregate total digital coupons consumed
+        # Filter criteria for digital and manual coupons
         total_digital_leaflets = CustomerSupplyDigitalCoupon.objects.filter(
-            customer_supply__salesman=request.user,
+            customer_supply__salesman=salesman,
             customer_supply__created_date__date__gte=start_date,
             customer_supply__created_date__date__lte=end_date,
         ).aggregate(total_digital_leaflets=Sum('count'))['total_digital_leaflets'] or 0
         
+        # Aggregate manual coupons (normal and free)
+        total_manual_leaflets_normal = CustomerSupplyCoupon.objects.filter(
+            customer_supply__created_date__date__gte=start_date,
+            customer_supply__created_date__date__lte=end_date,
+            customer_supply__salesman=salesman,
+            leaf__coupon__leaflets__used=False
+        ).aggregate(total_manual_leaflets=Count('leaf'))['total_manual_leaflets'] or 0
+
+        total_manual_leaflets_free = CustomerSupplyCoupon.objects.filter(
+            customer_supply__created_date__date__gte=start_date,
+            customer_supply__created_date__date__lte=end_date,
+            customer_supply__salesman=salesman,
+            free_leaf__coupon__leaflets__used=False
+        ).aggregate(total_manual_leaflets=Count('free_leaf'))['total_manual_leaflets'] or 0
+
+        # Total manual leaflets
+        total_manual_leaflets = total_manual_leaflets_normal + total_manual_leaflets_free
         
-        # Aggregate total manual coupons consumed
-        total_manual_leaflets = CustomerSupplyCoupon.objects.filter(
-                    customer_supply__created_date__date__gte=start_date,
-                    customer_supply__created_date__date__lte=end_date,
-                    customer_supply__salesman=request.user,
-                    leaf__coupon__leaflets__used=False
-                ).annotate(total_manual_leaflets=Count('leaf'))['total_manual_leaflets'] or 0
+        # Prepare customer data list
+        customer_data = []
+        customer_supplies = CustomerSupply.objects.filter(
+            salesman=salesman,
+            created_date__date__gte=start_date,
+            created_date__date__lte=end_date
+        )
         
-        total_manual_leaflets += CustomerSupplyCoupon.objects.filter(
-                    customer_supply__created_date__date__gte=start_date,
-                    customer_supply__created_date__date__lte=end_date,
-                    customer_supply__salesman=request.user,
-                    free_leaf__coupon__leaflets__used=False
-                ).annotate(total_manual_leaflets=Count('free_leaf'))['total_manual_leaflets'] or 0
+        if customer_id:
+            customer_supplies = customer_supplies.filter(customer__customer_id=customer_id)
+
+        # Populate customer data
+        for supply in customer_supplies:
+            customer = supply.customer
+            created_date = supply.created_date
+
+            customer_data.append({
+                'created_date': created_date.date(),  
+                'customer_id': customer.customer_id,
+                'customer_name': customer.customer_name,
+                'custom_id': customer.custom_id,
+                'building_name': customer.building_name,
+                'address': customer.billing_address,
+                'total_digital_coupons_consumed': total_digital_leaflets,
+                'total_manual_coupons_consumed': total_manual_leaflets
+            })
         
-        data = {
-            'total_digital_coupons_consumed': total_digital_leaflets,
-            'total_manual_coupons_consumed': total_manual_leaflets
-        }
+        # Serialize the data (do not use `many=True` with a dict)
+        serializer = TotalCouponsSerializer(customer_data, many=True)
         
-        serializer = TotalCouponsSerializer(data)
         return Response(serializer.data, status=status.HTTP_200_OK)
     
     
