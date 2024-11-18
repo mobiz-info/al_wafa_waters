@@ -10,8 +10,8 @@ class Command(BaseCommand):
     help = 'Update or create opening counts for today based on yesterday\'s closing counts'
 
     def handle(self, *args, **kwargs):
-        today = timezone.now().date()
-        yesterday = today - timedelta(days=1)
+        today = timezone.now().date() - timedelta(days=1)
+        yesterday = today 
         total_stock = 0
         nextday_stock = 0
         
@@ -44,7 +44,6 @@ class Command(BaseCommand):
                     return_count=yesterday_stock.return_count,
                     stock=total_stock
                 )
-        
         if (nextday_instances:=NextDayStockRequest.objects.filter(date=today,product=yesterday_stock.product,van=yesterday_stock.van)).exists():
             nextday_stock = int(nextday_instances.first().issued_quantity)
             
