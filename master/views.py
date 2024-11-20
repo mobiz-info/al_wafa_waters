@@ -905,15 +905,16 @@ class AmountChangesCustomersList(View):
 
     @method_decorator(login_required)
     def get(self, request, *args, **kwargs):
-        custom_ids = ["3531","3633","3551","5049"]
-        # # Step 1: Calculate the invoice balance for each customer
-        # invoices_balance = Invoice.objects.values('customer_id').annotate(
+        custom_ids = list(map(int, ["1663","2262","2264","2089","2320","1673","1896","2058","2090","2091","2095","1680","1968","2096","2054","2214","1763","1765","1766","1768","1769","1792","1778","1779","1780","1781","1783","1784","1785","1786","1787","1789","1775","1797","1799","2080","2081","1805","2269","2304","1698","2988","2267","2309","2273","1958","2234","1963","2316","1976","1990","2172","1998","2001","2002","2003","2071","2326","1894","2201","2229","2244","1521","1522","1526","1529","1530","1531","1570","1536","2171","2283","2149","2152","2324","1558","2295","2068","1581","1587","1588","1589","1647","3626","4140","3974","3976","4151","1970","1804","1973","1962","2055","2187","2174","2181","1944","2185","1999","2175","2258"]))
+        exclude_ids = list(map(int, ["1898","2062","1657","1790","1807","2279","1772","1527","1908","1995","1782","1658","2069","4385","1789","2244","2283","2326","1588","2096","2071","2172","2095","1786","2081","4151","1780","1536","1779","1970","1976","2262","1781","1680","1663","1804","1958","1973","1792","1784","1766","3974","1797","2068","1783","1673","2080","1768","1763","2324","1896","1962","1530","1526","2055","2269","2054","2187","1647","2988","1558","1968"]))
+        # Step 1: Calculate the invoice balance for each customer
+        # invoices_balance = Invoice.objects.filter(customer__routes__route_name="S-41").values('customer_id').annotate(
         #     total_invoiced=Sum(F('amout_total') - F('amout_recieved'))
         # )
 
         # # Step 2: Calculate the outstanding balance for each customer from CustomerOutstanding
         # outstanding_balance = CustomerOutstanding.objects.filter(
-        #     product_type='amount'
+        #     product_type='amount',customer__routes__route_name="S-41"
         # ).values('customer_id').annotate(
         #     total_outstanding=Sum('outstandingamount__amount')
         # )
@@ -928,7 +929,8 @@ class AmountChangesCustomersList(View):
         # ]
         
         # Retrieve customer instances for mismatched customers
-        instances = Customers.objects.filter(custom_id__in=custom_ids)
+        # instances = Customers.objects.filter(pk__in=mismatched_customers)
+        instances = Customers.objects.filter(custom_id__in=custom_ids).exclude(custom_id__in=exclude_ids)
         
         context = {
             'instances': instances
@@ -941,11 +943,14 @@ class AmountChangesList(View):
     @method_decorator(login_required)
     def get(self, request, *args, **kwargs):
         customer = request.GET.get("customer_pk")
-        instances = Invoice.objects.filter(customer__pk=customer).values_list("created_date", flat=True)
         
-        # Use a set to remove duplicate dates
-        unique_dates = sorted({date.date() for date in instances})
-        print(unique_dates)
+        # Retrieve dates from both CustomerSupply and Invoice models
+        supply_dates = CustomerSupply.objects.filter(customer__pk=customer).values_list("created_date", flat=True)
+        invoice_dates = Invoice.objects.filter(customer__pk=customer).values_list("created_date", flat=True)
+        
+        # Combine and remove duplicates by using a set, then sort the dates
+        unique_dates = sorted({date.date() for date in supply_dates} | {date.date() for date in invoice_dates})
+        
         context = {
             'instances': unique_dates,
             'customer': customer, 

@@ -42,6 +42,7 @@
                                     <thead>
                                         <tr>
                                         <th  style="text-align:center !important;" scope="col">Sl.No</th>
+                                        <th  style="text-align:center !important;" scope="col">ID</th>
                                         <th  style="text-align:center !important;" scope="col">name</th>
                                         <th  style="text-align:center !important;" scope="col">Route</th>
                                         <th  style="text-align:center !important;" scope="col">action</th>
@@ -51,6 +52,7 @@
                                         {% for instance in instances %}
                                         <tr>
                                             <td style="text-align:right;">{{forloop.counter}}</td>
+                                            <td style="text-align:left;">{{instance.custom_id}}</td>
                                             <td style="text-align:left;">{{instance.customer_name}}</td>
                                             <td style="text-align:left;">{{instance.routes.route_name}}</td>
                                             <td class="text-right">

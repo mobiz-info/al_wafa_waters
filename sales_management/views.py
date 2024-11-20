@@ -1202,7 +1202,7 @@ def download_salesreport_excel(request):
 #         table_border_format = workbook.add_format({'border':1})
 #         worksheet.conditional_format(4, 0, len(df.index)+4, len(df.columns) - 1, {'type':'cell', 'criteria': '>', 'value':0, 'format':table_border_format})
 #         merge_format = workbook.add_format({'align': 'center', 'bold': True, 'font_size': 16, 'border': 1})
-#         worksheet.merge_range('A1:J2', f'National Water', merge_format)
+#         worksheet.merge_range('A1:J2', f'Al-Wafa Water', merge_format)
 #         merge_format = workbook.add_format({'align': 'center', 'bold': True, 'border': 1})
 #         worksheet.merge_range('A3:J3', f'    Collection Report   ', merge_format)
 #         merge_format = workbook.add_format({'align': 'center', 'bold': True, 'border': 1})
@@ -1273,7 +1273,7 @@ def download_salesreport_excel(request):
 #         table_border_format = workbook.add_format({'border':1})
 #         worksheet.conditional_format(4, 0, len(df.index)+4, len(df.columns) - 1, {'type':'cell', 'criteria': '>', 'value':0, 'format':table_border_format})
 #         merge_format = workbook.add_format({'align': 'center', 'bold': True, 'font_size': 16, 'border': 1})
-#         worksheet.merge_range('A1:J2'Al WafaAl Wafa Water', merge_format)
+#         worksheet.merge_range('A1:J2'SanaSana Water', merge_format)
 #         merge_format = workbook.add_format({'align': 'center', 'bold': True, 'border': 1})
 #         worksheet.merge_range('A3:J3', f'    Daily Collection Report   ', merge_format)
 #         # worksheet.merge_range('E3:H3', f'Date: {def_date}', merge_format)
@@ -3412,16 +3412,21 @@ def dsr_foc_customers(request):
     routes_instances = RouteMaster.objects.all()
 
     # Get filter parameters from request
-    date = request.GET.get('date')
+    from_date = request.GET.get('from_date')
+    to_date = request.GET.get('to_date')
     route_name = request.GET.get('route_name')
 
-    # Set date and filter data
-    if date:
-        date = datetime.strptime(date, '%Y-%m-%d').date()
-        filter_data['filter_date'] = date.strftime('%Y-%m-%d')
+    # Set date range and filter data
+    if from_date and to_date:
+        from_date = datetime.strptime(from_date, '%Y-%m-%d').date()
+        to_date = datetime.strptime(to_date, '%Y-%m-%d').date()
+        filter_data['from_date'] = from_date.strftime('%Y-%m-%d')
+        filter_data['to_date'] = to_date.strftime('%Y-%m-%d')
     else:
-        date = datetime.today().date()
-        filter_data['filter_date'] = date.strftime('%Y-%m-%d')
+        # Default to today's date if no range is provided
+        from_date = to_date = datetime.today().date()
+        filter_data['from_date'] = from_date.strftime('%Y-%m-%d')
+        filter_data['to_date'] = to_date.strftime('%Y-%m-%d')
 
     if route_name:
         data_filter = True
@@ -3436,7 +3441,7 @@ def dsr_foc_customers(request):
         # Retrieve salesman
         salesman = van_route.van.salesman
         salesman_id = salesman.pk
-        foc_customers = CustomerSupply.objects.filter(created_date__date=date, customer__sales_type='FOC', salesman=salesman)
+        foc_customers = CustomerSupply.objects.filter(created_date__date__range=[from_date, to_date], customer__sales_type='FOC', salesman=salesman)
     else:
         foc_customers = []
 

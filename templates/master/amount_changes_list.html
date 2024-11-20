@@ -33,7 +33,7 @@
                     </div>
 
                     <div class="card-body">
-                        <table id="responsiveDataTable" class="table table-bordered text-nowrap" style="width:100%">
+                        <table class="table table-bordered text-nowrap" style="width:100%">
                             <thead>
                                 <tr>
                                     <th style="text-align:center !important;" scope="col">Sl.No</th>
@@ -55,7 +55,7 @@
                                     <td style="text-align:left;">
                                         {% if supplys %}
                                             {% for s in supplys %}
-                                                {{ s.subtotal }} - {{ s.invoice_no }}<br>
+                                                {{ s.subtotal }} - {{ s.invoice_no }} - recive: {{ s.amount_recieved }} - status :{% if s.subtotal == s.amount_recieved %} Paid {% else %} Non Paid {% endif %}<br>
                                             {% endfor %}
                                         {% else %}
                                             -
@@ -99,7 +99,7 @@
                                     <td style="text-align:left;">
                                         {% if collection %}
                                             {% for i in collection %}
-                                                total: {{ i.amount_received }}<br>
+                                                Receive: {{ i.amount_received }}<br>
                                             {% endfor %}
                                         {% else %}
                                             -

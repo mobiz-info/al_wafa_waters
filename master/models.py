@@ -110,3 +110,5 @@ class PrivacyPolicy(models.Model):
 
     def __str__(self):
         return "Privacy Policy"
+
+	

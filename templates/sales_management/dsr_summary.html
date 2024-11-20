@@ -125,6 +125,7 @@
                                         {% comment %} <th scope="col" style="text-align:center;">Custody Issued</th> {% endcomment %}
                                         <th scope="col" style="text-align:center;">Fresh Stock</th>
                                         <th scope="col" style="text-align:center;">Closing</th>
+                                        <th scope="col" style="text-align:center;">Action</th>
                                     </tr>
                                 </thead>
                                 <tbody>
@@ -145,6 +146,13 @@
                                         {% comment %} <td style="text-align:center;"></td> {% endcomment %}
                                         <td style="text-align:center;">{{stock_report_total}}</td>
                                         <td style="text-align:center;">{{van_data.closing_count}}</td>
+                                        <td>
+                                            <div class="g-2">
+                                                <a href="{% url 'vanstock_product_update' pk=van_data.pk %}" aria-label="anchor" class="btn btn-primary-light btn-sm ms-2" data-bs-toggle="tooltip" data-bs-original-title="Edit">
+                                                    <span class="ri-pencil-line fs-14"></span>
+                                                </a>
+                                            </div>
+                                        </td>
                                     </tr>
                                     {% endfor %}
                                 </tbody>

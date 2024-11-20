@@ -393,7 +393,14 @@ class CouponLeafSerializer(serializers.ModelSerializer):
     class Meta:
         model = CouponLeaflet
         fields = ['couponleaflet_id', 'leaflet_number','leaflet_name','used']
-        read_only_fields = ['id']
+        read_only_fields = ['couponleaflet_id']
+        
+class FreeLeafletSerializer(serializers.ModelSerializer):
+
+    class Meta:
+        model = FreeLeaflet
+        fields = ['couponleaflet_id', 'leaflet_number','leaflet_name','used']
+        read_only_fields = ['couponleaflet_id']
 
 class SupplyItemCustomersSerializer(serializers.ModelSerializer):
     products = serializers.SerializerMethodField()
@@ -460,8 +467,14 @@ class SupplyItemCustomersSerializer(serializers.ModelSerializer):
                 manual_coupons = customer_coupon_stock_manual.aggregate(total_count=Sum('count'))['total_count']
             
             coupon_ids_queryset = CustomerCouponItems.objects.filter(customer_coupon__customer=obj).values_list('coupon__pk', flat=True)
+            
             coupon_leafs = CouponLeaflet.objects.filter(used=False,coupon__pk__in=list(coupon_ids_queryset)).order_by("leaflet_name")
-            leafs = CouponLeafSerializer(coupon_leafs, many=True).data
+            coupon_leafs_data = CouponLeafSerializer(coupon_leafs, many=True).data
+            
+            free_leafs = FreeLeaflet.objects.filter(used=False,coupon__pk__in=list(coupon_ids_queryset)).order_by("leaflet_name")
+            free_leafs_data = FreeLeafletSerializer(free_leafs, many=True).data
+            
+            leafs = coupon_leafs_data + free_leafs_data
             
         return {
             'pending_coupons': pending_coupons,
@@ -649,6 +662,7 @@ class CustomerOutstandingSerializer(serializers.ModelSerializer):
         date_str = self.context.get('date_str')
         outstanding_amounts = OutstandingAmount.objects.filter(customer_outstanding__customer=obj,customer_outstanding__created_date__date__lte=date_str).aggregate(total_amount=Sum('amount'))['total_amount'] or 0
         collection_amount = CollectionPayment.objects.filter(customer=obj,created_date__date__lte=date_str).aggregate(total_amount_received=Sum('amount_received'))['total_amount_received'] or 0
+        
         
         if outstanding_amounts > collection_amount:
             return outstanding_amounts - collection_amount
@@ -1768,9 +1782,15 @@ class StaffOrdersSerializer(serializers.ModelSerializer):
     staff_name = serializers.SerializerMethodField()
     route = serializers.SerializerMethodField()
     status = serializers.SerializerMethodField()  # Use SerializerMethodField to fetch the status dynamically
+    new_stock = serializers.SerializerMethodField()
+    used_stock = serializers.SerializerMethodField()
     class Meta:
         model = Staff_Orders
-        fields = ['staff_order_id','created_date','order_date','order_number','staff_name','route','status']
+        fields = [
+            'staff_order_id', 'created_date', 'order_date', 
+            'order_number', 'staff_name', 'route', 
+            'status', 'new_stock', 'used_stock'
+        ]
     
     def get_staff_name(self, obj):
         try:
@@ -1795,6 +1815,28 @@ class StaffOrdersSerializer(serializers.ModelSerializer):
             return "No Status"
         except Staff_IssueOrders.DoesNotExist:
             return "No Status"
+
+    # Get new_stock (from ProductStock)
+    def get_new_stock(self, obj):
+        try:
+            # Assuming '5-gallon' is uniquely identifiable in ProductStock
+            product_stock = ProductStock.objects.filter(
+                product_name__product_name="5 gallon",
+
+            ).aggregate(total_quantity=models.Sum('quantity'))
+            return product_stock['total_quantity'] or 0
+        except Exception:
+            return 0
+
+    # Get used_stock (from WashedUsedProduct)
+    def get_used_stock(self, obj):
+        try:
+            washed_used_product = WashedUsedProduct.objects.filter(
+                product__product_name="5 gallon"
+            ).aggregate(total_quantity=models.Sum('quantity'))
+            return washed_used_product['total_quantity'] or 0
+        except Exception:
+            return 0
 
 
 class OrderDetailSerializer(serializers.ModelSerializer):

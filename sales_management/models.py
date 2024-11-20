@@ -257,3 +257,9 @@ class Receipt(models.Model):
 
     def __str__(self):
         return f"Receipt {self.receipt_number} for Instance {self.instance_id}"
+
+
+
+
+
+

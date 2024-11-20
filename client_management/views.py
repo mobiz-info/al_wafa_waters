@@ -534,8 +534,8 @@ def customer_supply_info(request,pk):
     :return: CustomerSupplys Info view
     """
     
-    instances = CustomerSupplyItems.objects.filter(customer_supply=pk).order_by("-customer_supply__created_date")
-         
+    supply = CustomerSupply.objects.get(pk=pk)
+    instances = CustomerSupplyItems.objects.filter(customer_supply=supply).order_by("-customer_supply__created_date")
     # date_range = ""
     # date_range = request.GET.get('date_range')
     # # print(date_range)
@@ -559,6 +559,7 @@ def customer_supply_info(request,pk):
     #     filter_data['q'] = query
     
     context = {
+        'supply': supply,
         'instances': instances,
         'page_name' : 'Customer Supply List',
         'page_title' : 'Customer Supply List',
@@ -1794,7 +1795,7 @@ def custody_issue(request):
                     f'Customer custody issued for {customer}. Bottles issued: {total_bottles_issued}, '
                     f'Quotation deposit amount: {deposit_amount}, Agreement number: {agreement_no}.'
                 )
-                notification(sales_man.pk, "Custody Issued", salesman_body, "Al Wafawaterfcm")
+                notification(sales_man.pk, "Custody Issued", salesman_body, "Sanawaterfcm")
                 
                 # Customer notification
                 customer_body = (
@@ -1803,7 +1804,7 @@ def custody_issue(request):
                     f'\nQuotation deposit amount: {deposit_amount}, '
                     f'\nAgreement number: {agreement_no}.'
                 )
-                notification(customer.user_id.pk, "Custody Issued", customer_body, "Al Wafawatercustomer")
+                notification(customer.user_id.pk, "Custody Issued", customer_body, "Sanawatercustomer")
 
             except CustomUser.DoesNotExist:
                 messages.error(request, 'Salesman does not exist.', 'alert-danger')
@@ -1989,6 +1990,10 @@ def delete_count(request, pk):
 
 # @login_required
 
+from datetime import datetime
+from django.db.models import Q, Sum
+from django.shortcuts import render
+
 def customer_outstanding_list(request):
     """
     Customer Outstanding List with Excel Export
@@ -1999,47 +2004,49 @@ def customer_outstanding_list(request):
     q = request.GET.get('q', '')  
     route_name = request.GET.get('route_name', '')
     date = request.GET.get('date')
-
-    if request.GET.get('product_type'):
-        product_type = request.GET.get('product_type')
-    else:
-        product_type = "amount"
-        
+    product_type = request.GET.get('product_type', 'amount')
+    
+    # Prepare route list
+    route_li = RouteMaster.objects.all()
+    
     filter_data['product_type'] = product_type
     
+    # Set default date if not provided
     if date:
         date = datetime.strptime(date, '%Y-%m-%d').date()
-        filter_data['filter_date'] = date.strftime('%Y-%m-%d')
     else:
         date = datetime.today().date()
-        filter_data['filter_date'] = date.strftime('%Y-%m-%d')
+    filter_data['filter_date'] = date.strftime('%Y-%m-%d')
     
-    outstanding_instances = CustomerOutstanding.objects.filter(created_date__date__lte=date)
-
-    if request.GET.get("customer_pk"):
-        outstanding_instances = outstanding_instances.filter(customer__pk=request.GET.get("customer_pk"))
-        filter_data['customer_pk'] = request.GET.get("customer_pk")
+    # Base queryset for outstanding instances
+    outstanding_instances = CustomerOutstanding.objects.filter(created_date__date__lte=date, product_type=product_type)
+    
+    # Apply additional filters
+    if customer_pk := request.GET.get("customer_pk"):
+        outstanding_instances = outstanding_instances.filter(customer__pk=customer_pk)
+        filter_data['customer_pk'] = customer_pk
 
     if route_name:
         outstanding_instances = outstanding_instances.filter(customer__routes__route_name=route_name)
-        filter_data['route_name'] = request.GET.get("route_name")
+    else:
+        route_name = route_li.first().route_name
+        outstanding_instances = outstanding_instances.filter(customer__routes__route_name=route_name)
+    filter_data['route_name'] = route_name
 
     if q:
         outstanding_instances = outstanding_instances.filter(customer__customer_name__icontains=q)
-        filter_data['q'] = request.GET.get("q")
+        filter_data['q'] = q
         
+    # Fetch unique customer IDs from filtered outstanding instances
     customer_ids = outstanding_instances.values_list('customer__pk', flat=True).distinct()
-
     instances = Customers.objects.filter(pk__in=customer_ids)
-    
-    route_li = RouteMaster.objects.all()
 
     # Initialize totals
     total_outstanding_amount = 0
     total_outstanding_bottles = 0
     total_outstanding_coupons = 0
 
-    # Loop through each customer to calculate totals
+    # Calculate totals for each customer
     for customer in instances:
         outstanding_amount = OutstandingAmount.objects.filter(
             customer_outstanding__customer__pk=customer.pk, 
@@ -2051,7 +2058,7 @@ def customer_outstanding_list(request):
             created_date__date__lte=date
         ).aggregate(total_amount_received=Sum('amount_received'))['total_amount_received'] or 0
         
-        outstanding_amount = outstanding_amount - collection_amount
+        outstanding_amount -= collection_amount
         total_outstanding_amount += outstanding_amount
         
         total_bottles = OutstandingProduct.objects.filter(
@@ -2066,16 +2073,17 @@ def customer_outstanding_list(request):
         ).aggregate(total_coupons=Sum('count'))['total_coupons'] or 0
         total_outstanding_coupons += total_coupons
 
+    # Handle Excel export
     if request.GET.get('export') == 'excel':
         return export_to_excel(instances, date, total_outstanding_amount, total_outstanding_bottles, total_outstanding_coupons)
 
-    # Context for rendering template as usual
+    # Context for rendering template
     context = {
         'instances': instances,
         'filter_data': filter_data,
         'route_li': route_li,
         'date': date,
-        'customer_pk': request.GET.get("customer_pk"),
+        'customer_pk': customer_pk,
         'page_name': 'Customer Outstanding List',
         'page_title': 'Customer Outstanding List',
         'is_customer_outstanding': True,
@@ -2086,6 +2094,7 @@ def customer_outstanding_list(request):
     }
 
     return render(request, 'client_management/customer_outstanding/list.html', context)
+
 
 def export_to_excel(instances, date, total_outstanding_amount, total_outstanding_bottles, total_outstanding_coupons):
     """
@@ -2365,7 +2374,7 @@ def customer_outstanding_details(request,customer_pk):
         filter_data['q'] = query
     
     context = {
-        'instances': instances,
+        'instances': instances.order_by("-created_date"),
         'page_name' : 'Customer Outstanding List',
         'page_title' : 'Customer Outstanding List',
         'customer_pk': request.GET.get("customer_pk"),

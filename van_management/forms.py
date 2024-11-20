@@ -170,3 +170,22 @@ class ExcessBottleCountForm(forms.ModelForm):
         model = ExcessBottleCount
         fields = ['van', 'bottle_count', 'route']
         
+
+class VanProductStockForm(forms.ModelForm):
+    class Meta:
+        model = VanProductStock
+        fields = ["opening_count","change_count","damage_count","empty_can_count","return_count","requested_count","pending_count","sold_count","stock","foc"]
+        
+        widgets = {
+            'opening_count': forms.TextInput(attrs={'class':'form-control'}),
+            # 'closing_count': forms.TextInput(attrs={'class':'form-control'}),
+            'change_count': forms.TextInput(attrs={'class':'form-control'}),
+            'damage_count': forms.TextInput(attrs={'class':'form-control'}),
+            'empty_can_count': forms.TextInput(attrs={'class':'form-control'}),
+            'return_count': forms.TextInput(attrs={'class':'form-control'}),
+            'requested_count': forms.TextInput(attrs={'class':'form-control'}),
+            'pending_count': forms.TextInput(attrs={'class':'form-control'}),
+            'sold_count': forms.TextInput(attrs={'class':'form-control'}),
+            'stock': forms.TextInput(attrs={'class':'form-control'}),
+            'foc': forms.TextInput(attrs={'class':'form-control'}),
+        }

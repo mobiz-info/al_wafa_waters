@@ -3072,6 +3072,8 @@ class CustomerCouponRecharge(APIView):
                                 van_coupon_stock.sold_count += 1
                                 van_coupon_stock.save()
                                 
+                            CouponStock.objects.filter(couponbook=coupon).update(coupon_stock="customer")
+                                
                     elif coupon_method == "digital":
                         digital_coupon_data = request.data.get('digital_coupon', {})
                         try:
@@ -3127,7 +3129,7 @@ class CustomerCouponRecharge(APIView):
                     if invoice_instance.amout_total == invoice_instance.amout_recieved:
                         invoice_instance.invoice_status = "paid"
                     else:
-                        invoice_instance.invoice_status = "partial"
+                        invoice_instance.invoice_status = "non_paid"
                     invoice_instance.save()
                     
                     coupon_items = CustomerCouponItems.objects.filter(customer_coupon=customer_coupon) 
@@ -8699,7 +8701,9 @@ class StaffIssueOrdersAPIView(APIView):
         for detail_data in staff_orders_details_data:
             staff_order_details_id = detail_data.get('staff_order_details_id')
             product_id = detail_data.get('product_id')
-            count = int(detail_data.get('count', 0))  # Ensure count is an integer
+            count = int(detail_data.get('count', 0))
+            used_stock = int(detail_data.get('used_stock', 0))
+            new_stock = int(detail_data.get('new_stock', 0))
 
             try:
                 product_id = convert_to_uuid(product_id)
@@ -8810,7 +8814,7 @@ class StaffIssueOrdersAPIView(APIView):
                     if van_limit:
                         try:
                             with transaction.atomic():
-                                product_stock = get_object_or_404(ProductStock, product_name=issue.product_id)
+                                product_stock = get_object_or_404(ProductStock, product_name=issue.product_id,branch=van.branch_id)
                                 stock_quantity = issue.count
 
                                 if 0 < int(quantity_issued) <= int(product_stock.quantity):
@@ -8845,16 +8849,13 @@ class StaffIssueOrdersAPIView(APIView):
 
                                     if VanProductStock.objects.filter(created_date=datetime.today().date(), product=issue.product_id, van=van).exists():
                                         van_product_stock = VanProductStock.objects.get(created_date=datetime.today().date(), product=issue.product_id, van=van)
-                                        van_product_stock.stock += int(quantity_issued)
-                                        van_product_stock.save()
                                     else:
-                                        VanProductStock.objects.create(
+                                        van_product_stock = VanProductStock.objects.create(
                                             created_date=datetime.now().date(),
                                             product=issue.product_id,
                                             van=van,
-                                            stock=int(quantity_issued)
-                                        )
-                                        
+                                            stock=int(quantity_issued))
+
                                     if issue.product_id.product_name == "5 Gallon":
                                         if (bottle_count:=BottleCount.objects.filter(van=van_product_stock.van,created_date__date=van_product_stock.created_date)).exists():
                                             bottle_count = bottle_count.first()
@@ -8880,14 +8881,49 @@ class StaffIssueOrdersAPIView(APIView):
                                         "title": "Failed",
                                         "message": f"No stock available in {product_stock.product_name}, only {product_stock.quantity} left",
                                     }
+                                if used_stock > 0:
+                                    WashedUsedProduct.objects.create(
+                                        product=issue.product_id,
+                                        quantity=used_stock
+                                    )
 
-                        except IntegrityError as e:
-                            status_code = status.HTTP_400_BAD_REQUEST
-                            response_data = {
-                                "status": "false",
-                                "title": "Failed",
-                                "message": str(e),
-                            }
+                                    # Deduct from ProductStock
+                                    product_stock = ProductStock.objects.filter(product_name=issue.product_id).first()
+                                    if product_stock and product_stock.quantity >= used_stock:
+                                        product_stock.quantity -= used_stock
+                                        product_stock.save()
+                                    else:
+                                        return Response(
+                                            {
+                                                "status": "false",
+                                                "title": "Failed",
+                                                "message": f"Insufficient stock for {product_stock.product_name}. Only {product_stock.quantity} available.",
+                                            },
+                                            status=status.HTTP_400_BAD_REQUEST
+                                        )
+
+                                    response_data["used_stock"] = f"{used_stock} units recorded as used stock successfully."
+
+                                # Handle new stock
+                                if new_stock > 0:
+                                    product_stock = ProductStock.objects.filter(product_name=issue.product_id).first()
+                                    
+                                    # If ProductStock exists, increase the quantity
+                                    if product_stock:
+                                        product_stock.quantity += new_stock
+                                        product_stock.save()
+                                    else:
+                                        # Create a new ProductStock record if none exists
+                                        ProductStock.objects.create(
+                                            product_name=issue.product_id,
+                                            quantity=new_stock,
+                                            branch=van.branch_id,
+                                            created_by=request.user.id
+                                        )
+
+                                    response_data["new_stock"] = f"{new_stock} units added to new stock successfully."
+
+                        
 
                         except Exception as e:
                             status_code = status.HTTP_400_BAD_REQUEST
@@ -9969,6 +10005,7 @@ class SalesInvoicesAPIView(APIView):
     def get(self, request):
         start_date = request.GET.get('start_date')
         end_date = request.GET.get('end_date')
+        invoice_type = request.GET.get('invoice_types')  
         
         if not start_date:
             start_date = datetime.today().date()
@@ -9981,9 +10018,17 @@ class SalesInvoicesAPIView(APIView):
             end_date = datetime.strptime(end_date, '%Y-%m-%d').date()
         
         route = Van_Routes.objects.get(van__salesman=request.user).routes
-        instances = Invoice.objects.filter(created_date__date__gte=start_date,created_date__date__lte=end_date,customer__routes=route)
-                
-        serializer = SalesInvoiceSerializer(instances,many=True)
+        
+        instances = Invoice.objects.filter(
+            created_date__date__gte=start_date,
+            created_date__date__lte=end_date,
+            customer__routes=route
+        )
+        
+        if invoice_type:
+            instances = instances.filter(invoice_type=invoice_type)
+        
+        serializer = SalesInvoiceSerializer(instances, many=True)
         
         response_data = {
             "StatusCode": status.HTTP_200_OK,
@@ -9994,7 +10039,7 @@ class SalesInvoicesAPIView(APIView):
                 "total_vat": instances.aggregate(total_vat=Sum('vat'))['total_vat'] or 0,
                 "total_amount": instances.aggregate(total_amount=Sum('amout_total'))['total_amount'] or 0,
                 "total_amount_collected": instances.aggregate(total_amout_recieved=Sum('amout_recieved'))['total_amout_recieved'] or 0,
-                "filter_data":{
+                "filter_data": {
                     "invoice_types": [{'key': key, 'value': value} for key, value in INVOICE_TYPES],
                     "start_date": start_date,
                     "end_date": end_date,

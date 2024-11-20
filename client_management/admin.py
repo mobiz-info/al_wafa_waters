@@ -57,8 +57,15 @@ class CustomerOutstandingReportAdmin(admin.ModelAdmin):
 admin.site.register(CustomerOutstandingReport,CustomerOutstandingReportAdmin)
 
 class CustomerSupplyAdmin(admin.ModelAdmin):
-    list_display = ('id','customer','salesman','grand_total','allocate_bottle_to_pending','allocate_bottle_to_custody','allocate_bottle_to_paid','discount','net_payable','vat','subtotal','amount_recieved')
-admin.site.register(CustomerSupply,CustomerSupplyAdmin)
+    list_display = (
+        'id', 'customer', 'salesman', 'grand_total', 'allocate_bottle_to_pending',
+        'allocate_bottle_to_custody', 'allocate_bottle_to_paid', 'discount',
+        'net_payable', 'vat', 'subtotal', 'amount_recieved'
+    )
+    list_filter = ('salesman',)  # Other filters if needed
+    search_fields = ('customer__customer_name',)  # Search by customer name (ForeignKey field)
+
+admin.site.register(CustomerSupply, CustomerSupplyAdmin)
 
 admin.site.register(CustomerSupplyItems)
 admin.site.register(CustomerSupplyStock)

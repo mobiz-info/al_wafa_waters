@@ -23,6 +23,7 @@ def available_free_coupons(coupon_pk):
 def get_coupon_designation(pk):
     instance = NewCoupon.objects.get(pk=pk)
     coupon_status = CouponStock.objects.get(couponbook=instance).coupon_stock
+    print(CouponStock.objects.get(couponbook=instance).pk)
     
     if coupon_status == "customer":
         customer_instance = CustomerCouponItems.objects.get(coupon=instance).customer_coupon.customer
