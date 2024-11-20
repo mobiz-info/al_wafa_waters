@@ -33,7 +33,7 @@ def get_van_product_wise_stock(date,van,product):
         van = Van.objects.get(pk=van)
         van_stock = VanProductStock.objects.get(created_date=date,van=van,product__pk=product)
             
-        staff_order_details = Staff_Orders_details.objects.filter(staff_order_id__created_date__date=date,product_id__pk=product,staff_order_id__created_by=van.salesman.pk)
+        staff_order_details = Staff_Orders_details.objects.filter(staff_order_id__order_date=date,product_id__pk=product,staff_order_id__created_by=van.salesman.pk)
         # issue=Staff_IssueOrders.objects.filter(staff_Orders_details_id=staff_order_details)
         issued_count = staff_order_details.aggregate(total_count=Sum('issued_qty'))['total_count'] or 0
         
