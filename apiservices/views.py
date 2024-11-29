@@ -9998,24 +9998,28 @@ class ProductRouteSalesReportAPIView(APIView):
         return Response(serializer.data, status=status.HTTP_200_OK)
     
 
+from rest_framework.parsers import JSONParser
 class SalesInvoicesAPIView(APIView):
     authentication_classes = [BasicAuthentication]
     permission_classes = [IsAuthenticated]
+    parser_classes = [JSONParser]  
 
     def get(self, request):
-        start_date = request.GET.get('start_date')
-        end_date = request.GET.get('end_date')
-        invoice_type = request.GET.get('invoice_types')  
-        
+        data = request.data
+        start_date = data.get('start_date')
+        end_date = data.get('end_date')
+        invoice_type = data.get('invoice_types')
+
         if not start_date:
             start_date = datetime.today().date()
         else:
             start_date = datetime.strptime(start_date, '%Y-%m-%d').date()
-        
+
         if not end_date:
             end_date = datetime.today().date()
         else:
             end_date = datetime.strptime(end_date, '%Y-%m-%d').date()
+        
         
         route = Van_Routes.objects.get(van__salesman=request.user).routes
         
@@ -10040,7 +10044,7 @@ class SalesInvoicesAPIView(APIView):
                 "total_amount": instances.aggregate(total_amount=Sum('amout_total'))['total_amount'] or 0,
                 "total_amount_collected": instances.aggregate(total_amout_recieved=Sum('amout_recieved'))['total_amout_recieved'] or 0,
                 "filter_data": {
-                    "invoice_types": [{'key': key, 'value': value} for key, value in INVOICE_TYPES],
+                    "invoice_types": invoice_type,
                     "start_date": start_date,
                     "end_date": end_date,
                     "route_name": route.route_name,
