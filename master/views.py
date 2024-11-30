@@ -2,6 +2,7 @@ import json
 import uuid
 import datetime
 from datetime import timedelta
+from django.utils.timezone import now
 from calendar import monthrange
 
 from django.views import View
@@ -15,6 +16,7 @@ from django.utils.decorators import method_decorator
 from django.contrib.auth.hashers import make_password
 from django.db.models.functions import ExtractWeekDay
 from django.contrib.auth.decorators import login_required
+from django.db.models import Sum,Count,F,Q,DecimalField
 from django.db.models.functions import ExtractDay,TruncDate
 from django.shortcuts import render, redirect, get_object_or_404
 
