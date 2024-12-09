@@ -4,7 +4,7 @@ import datetime
 from datetime import timedelta
 from django.utils.timezone import now
 from calendar import monthrange
-
+from django.db.models.functions import TruncMonth
 from django.views import View
 from django.shortcuts import render
 from django.contrib import messages
@@ -313,6 +313,71 @@ def overview(request):
             'non_visited_customers_count': len(non_visited_customers)
         })
     
+    #Monthly New Customers chart
+    new_customers = (
+        Customers.objects.annotate(month=TruncMonth("created_date"))
+        .values("month")
+        .annotate(count=Count("customer_id"))
+        .order_by("month")
+    )
+
+    churn = (
+        Customers.objects.filter(is_active=False)  
+        .annotate(month=TruncMonth("created_date"))
+        .values("month")
+        .annotate(count=Count("customer_id"))
+        .order_by("month")
+    )
+
+    months = [item["month"].strftime("%b") for item in new_customers]
+    new_customers_data = [item["count"] for item in new_customers]
+    churn_data = [next((c["count"] for c in churn if c["month"] == item["month"]), 0) for item in new_customers]
+
+    chart_data = {
+        "months": months,
+        "datasets": {
+            "new_customers": new_customers_data,
+            "churn": churn_data,
+        },
+    }
+    #Planned Vs Actual
+    routes_data = []
+
+    planned_data = []
+    actual_data = []
+
+    for route in routes:
+        route_id = route.route_id
+        actual_visitors = Customers.objects.filter(routes__pk=route_id, is_active=True).count()
+
+        planned_visitors_list = find_customers(request, str(date), route_id)  # Ensure this returns a list
+        planned_visitors = len(planned_visitors_list) if planned_visitors_list else 0
+
+        routes_data.append({
+                'route_name': route.route_name,
+                'actual_visitors': actual_visitors,
+                'planned_visitors': planned_visitors,
+            })
+
+            # Collect the data for the chart
+        planned_data.append(planned_visitors)
+        actual_data.append(actual_visitors)
+        
+    #today supply
+    salesman_supply_data = (
+        CustomerSupplyItems.objects.filter(customer_supply__created_date__date=today)
+        .values('customer_supply__salesman__username')  # Get the salesman username
+        .annotate(total_quantity=Sum('quantity'))  # Sum the quantity field
+        .order_by('customer_supply__salesman__username')
+    )
+
+    # Prepare the data for the pie chart
+    salesman_supply_data = [
+        {'salesman_name': item['customer_supply__salesman__username'], 'total_quantity': item['total_quantity']}
+        for item in salesman_supply_data
+    ]
+    
+
     # others    
     pending_complaints_count = CustomerComplaint.objects.filter(status='Pending').count()
     resolved_complaints_count = CustomerComplaint.objects.filter(status='Completed').count()
@@ -323,6 +388,7 @@ def overview(request):
     today_orders_count = Staff_Orders.objects.filter(created_date=today).count()
     
     today_coupon_requests_count = CustomerCoupon.objects.filter(created_date=today).count()
+
     
     context = {
         # overview section
@@ -397,6 +463,11 @@ def overview(request):
         "route_data" : route_data,
         "route_inactive_customer_count" : route_inactive_customer_count,
         "non_visited_customers_data": non_visited_customers_data,
+        "chart_data": json.dumps(chart_data),
+        'routes_data': routes_data,
+        'planned_data': planned_data,
+        'actual_data': actual_data,
+        'salesman_supply_data': salesman_supply_data,
         #others
         "pending_complaints_count":pending_complaints_count,
         "total_expense": total_expense,
