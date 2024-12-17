@@ -2,30 +2,32 @@ import json
 import uuid
 import datetime
 from datetime import timedelta
-from django.utils.timezone import now
 from calendar import monthrange
 
+
 from django.views import View
+from django.urls import reverse
 from django.shortcuts import render
 from django.contrib import messages
 from django.core.cache import cache
-from django.db.models import Sum,Count,F
+from django.utils.timezone import now
 from django.shortcuts import render, redirect
 from django.db import transaction, IntegrityError
+from django.db.models.functions import TruncMonth
+from django.http import HttpResponse, JsonResponse
 from django.utils.decorators import method_decorator
 from django.contrib.auth.hashers import make_password
 from django.db.models.functions import ExtractWeekDay
-from django.contrib.auth.decorators import login_required
 from django.db.models import Sum,Count,F,Q,DecimalField
-from django.db.models.functions import ExtractDay,TruncDate
+from django.contrib.auth.decorators import login_required
 from django.shortcuts import render, redirect, get_object_or_404
-
-from invoice_management.models import Invoice
+from django.db.models.functions import ExtractDay,TruncDate,Coalesce
 
 from .forms import *
 from .models import *
 from . serializers import *
 from accounts.models import *
+from invoice_management.models import Invoice, InvoiceItems
 from customer_care.models import *
 from sales_management.models import CollectionPayment
 from van_management.models import Van, VanProductStock , Expense
@@ -260,17 +262,13 @@ def overview(request):
     
     last_20_days = today - timedelta(days=20)
 
-        # Get all the routes
     routes = RouteMaster.objects.all()
 
-        # Initialize a dictionary to store the inactive customers count by route
     route_inactive_customer_count = {}
     inactive_customers_count = 0
     for route in routes:
-            # Get the customers associated with this route
         route_customers = Customers.objects.filter(routes=route)
 
-            # Get customers who haven't had a supply in the last 20 days
         visited_customers = CustomerSupply.objects.filter(
                 created_date__date__range=(last_20_days, today)
             ).values_list('customer_id', flat=True)
@@ -278,14 +276,12 @@ def overview(request):
         todays_customers = find_customers(request, str(today), route.pk) or []
         todays_customer_ids = {customer['customer_id'] for customer in todays_customers}
 
-            # Filter out customers who had a supply in the last 20 days or today
         inactive_customers = route_customers.exclude(
                 pk__in=visited_customers
             ).exclude(
                 pk__in=todays_customer_ids
             )
 
-            # Add the count of inactive customers for this route
         route_inactive_customer_count[route.route_name] = inactive_customers.count()
         inactive_customers_count += inactive_customers.count()
 
@@ -307,7 +303,6 @@ def overview(request):
                     if str(day_of_week) == str(day) and str(week_number) in weeks:
                         scheduled_customers_filtered.append(customer.pk)
                         
-        # Get non-visited customers
         non_visited_customers = set(scheduled_customers_filtered) - set(
             NonvisitReport.objects.filter(
                 created_date__date=date, 
@@ -315,13 +310,87 @@ def overview(request):
             ).values_list('customer__pk', flat=True)
         )
         
-        # Append route and non-visited customer count to the list
         non_visited_customers_data.append({
             'route': route.route_name,
             'non_visited_customers_count': len(non_visited_customers)
         })
+    
+    #Monthly New Customers chart
+    new_customers = (
+        Customers.objects.annotate(month=TruncMonth("created_date"))
+        .values("month")
+        .annotate(count=Count("customer_id"))
+        .order_by("month")
+    )
+
+    churn = (
+        Customers.objects.filter(is_active=False)  
+        .annotate(month=TruncMonth("created_date"))
+        .values("month")
+        .annotate(count=Count("customer_id"))
+        .order_by("month")
+    )
+
+    months = [item["month"].strftime("%b") for item in new_customers]
+    new_customers_data = [item["count"] for item in new_customers]
+    churn_data = [next((c["count"] for c in churn if c["month"] == item["month"]), 0) for item in new_customers]
+
+    chart_data = {
+        "months": months,
+        "datasets": {
+            "new_customers": new_customers_data,
+            "churn": churn_data,
+        },
+    }
+    #Planned Vs Actual
+    routes_data = []
+
+    planned_data = []
+    actual_data = []
+
+    for route in routes:
+        route_id = route.route_id
+        actual_visitors = Customers.objects.filter(routes__pk=route_id, is_active=True).count()
+
+        planned_visitors_list = find_customers(request, str(date), route_id)  # Ensure this returns a list
+        planned_visitors = len(planned_visitors_list) if planned_visitors_list else 0
+
+        routes_data.append({
+                'route_name': route.route_name,
+                'actual_visitors': actual_visitors,
+                'planned_visitors': planned_visitors,
+            })
+
+            # Collect the data for the chart
+        planned_data.append(planned_visitors)
+        actual_data.append(actual_visitors)
         
+    #today supply
+    salesman_supply_data = (
+        CustomerSupplyItems.objects.filter(customer_supply__created_date__date=today)
+        .values('customer_supply__salesman__username')  # Get the salesman username
+        .annotate(total_quantity=Sum('quantity'))  # Sum the quantity field
+        .order_by('customer_supply__salesman__username')
+    )
+
+    # Prepare the data for the pie chart
+    salesman_supply_data = [
+        {'salesman_name': item['customer_supply__salesman__username'], 'total_quantity': item['total_quantity']}
+        for item in salesman_supply_data
+    ]
+    
+
+    # others    
     pending_complaints_count = CustomerComplaint.objects.filter(status='Pending').count()
+    resolved_complaints_count = CustomerComplaint.objects.filter(status='Completed').count()
+    
+    today_expenses = Expense.objects.filter(expense_date=today)
+    total_expense = today_expenses.aggregate(total=Sum('amount'))['total'] or 0
+    
+    today_orders_count = Staff_Orders.objects.filter(created_date=today).count()
+    
+    today_coupon_requests_count = CustomerCoupon.objects.filter(created_date=today).count()
+
     
     context = {
         # overview section
@@ -396,11 +465,20 @@ def overview(request):
         "route_data" : route_data,
         "route_inactive_customer_count" : route_inactive_customer_count,
         "non_visited_customers_data": non_visited_customers_data,
+        "chart_data": json.dumps(chart_data),
+        'routes_data': routes_data,
+        'planned_data': planned_data,
+        'actual_data': actual_data,
+        'salesman_supply_data': salesman_supply_data,
+        #others
         "pending_complaints_count":pending_complaints_count,
+        "total_expense": total_expense,
+        "today_orders_count": today_orders_count,
+        "today_coupon_requests_count": today_coupon_requests_count,
+        "resolved_complaints_count":resolved_complaints_count,
     }
 
     return render(request, 'master/dashboard/overview_dashboard.html', context) 
-
 
 
 class Branch_List(View):
@@ -992,43 +1070,102 @@ def terms_and_conditions_delete(request, pk):
         return redirect('terms_and_conditions_list')
     return render(request, 'master/terms_and_conditions_delete.html', {'instance': instance})
 
+# class AmountChangesCustomersList(View):
+#     template_name = 'master/amount_changes_customer_list.html'
+
+#     @method_decorator(login_required)
+#     def get(self, request, *args, **kwargs):
+#         custom_ids = list(map(int, ["1663","2262","2264","2089","2320","1673","1896","2058","2090","2091","2095","1680","1968","2096","2054","2214","1763","1765","1766","1768","1769","1792","1778","1779","1780","1781","1783","1784","1785","1786","1787","1789","1775","1797","1799","2080","2081","1805","2269","2304","1698","2988","2267","2309","2273","1958","2234","1963","2316","1976","1990","2172","1998","2001","2002","2003","2071","2326","1894","2201","2229","2244","1521","1522","1526","1529","1530","1531","1570","1536","2171","2283","2149","2152","2324","1558","2295","2068","1581","1587","1588","1589","1647","3626","4140","3974","3976","4151","1970","1804","1973","1962","2055","2187","2174","2181","1944","2185","1999","2175","2258"]))
+#         exclude_ids = list(map(int, ["1898","2062","1657","1790","1807","2279","1772","1527","1908","1995","1782","1658","2069","4385","1789","2244","2283","2326","1588","2096","2071","2172","2095","1786","2081","4151","1780","1536","1779","1970","1976","2262","1781","1680","1663","1804","1958","1973","1792","1784","1766","3974","1797","2068","1783","1673","2080","1768","1763","2324","1896","1962","1530","1526","2055","2269","2054","2187","1647","2988","1558","1968"]))
+#         # Step 1: Calculate the invoice balance for each customer
+#         invoices_balance = Invoice.objects.filter(customer__routes__route_name="S-41").values('customer_id').annotate(
+#             total_invoiced=Sum(F('amout_total') - F('amout_recieved'))
+#         )
+
+#         # Step 2: Calculate the outstanding balance for each customer from CustomerOutstanding
+#         outstanding_balance = CustomerOutstanding.objects.filter(
+#             product_type='amount',customer__routes__route_name="S-41"
+#         ).values('customer_id').annotate(
+#             total_outstanding=Sum('outstandingamount__amount')
+#         )
+
+#         # Convert outstanding_balance to a dictionary for quick lookup by customer_id
+#         outstanding_balance_dict = {item['customer_id']: item['total_outstanding'] for item in outstanding_balance}
+
+#         # Step 3: Identify customers with mismatched balances
+#         mismatched_customers = [
+#             item['customer_id'] for item in invoices_balance
+#             if item['total_invoiced'] != outstanding_balance_dict.get(item['customer_id'], 0)
+#         ]
+        
+#         Retrieve customer instances for mismatched customers
+#         instances = Customers.objects.filter(pk__in=mismatched_customers)
+#         instances = Customers.objects.filter(custom_id__in=custom_ids).exclude(custom_id__in=exclude_ids)
+        
+#         context = {
+#             'instances': instances
+#         }
+#         return render(request, self.template_name, context)
+
 class AmountChangesCustomersList(View):
     template_name = 'master/amount_changes_customer_list.html'
 
     @method_decorator(login_required)
     def get(self, request, *args, **kwargs):
-        custom_ids = list(map(int, ["1663","2262","2264","2089","2320","1673","1896","2058","2090","2091","2095","1680","1968","2096","2054","2214","1763","1765","1766","1768","1769","1792","1778","1779","1780","1781","1783","1784","1785","1786","1787","1789","1775","1797","1799","2080","2081","1805","2269","2304","1698","2988","2267","2309","2273","1958","2234","1963","2316","1976","1990","2172","1998","2001","2002","2003","2071","2326","1894","2201","2229","2244","1521","1522","1526","1529","1530","1531","1570","1536","2171","2283","2149","2152","2324","1558","2295","2068","1581","1587","1588","1589","1647","3626","4140","3974","3976","4151","1970","1804","1973","1962","2055","2187","2174","2181","1944","2185","1999","2175","2258"]))
-        exclude_ids = list(map(int, ["1898","2062","1657","1790","1807","2279","1772","1527","1908","1995","1782","1658","2069","4385","1789","2244","2283","2326","1588","2096","2071","2172","2095","1786","2081","4151","1780","1536","1779","1970","1976","2262","1781","1680","1663","1804","1958","1973","1792","1784","1766","3974","1797","2068","1783","1673","2080","1768","1763","2324","1896","1962","1530","1526","2055","2269","2054","2187","1647","2988","1558","1968"]))
-        # Step 1: Calculate the invoice balance for each customer
-        # invoices_balance = Invoice.objects.filter(customer__routes__route_name="S-41").values('customer_id').annotate(
-        #     total_invoiced=Sum(F('amout_total') - F('amout_recieved'))
-        # )
-
-        # # Step 2: Calculate the outstanding balance for each customer from CustomerOutstanding
-        # outstanding_balance = CustomerOutstanding.objects.filter(
-        #     product_type='amount',customer__routes__route_name="S-41"
-        # ).values('customer_id').annotate(
-        #     total_outstanding=Sum('outstandingamount__amount')
-        # )
-
-        # # Convert outstanding_balance to a dictionary for quick lookup by customer_id
-        # outstanding_balance_dict = {item['customer_id']: item['total_outstanding'] for item in outstanding_balance}
-
-        # # Step 3: Identify customers with mismatched balances
-        # mismatched_customers = [
-        #     item['customer_id'] for item in invoices_balance
-        #     if item['total_invoiced'] != outstanding_balance_dict.get(item['customer_id'], 0)
-        # ]
+        mismatched_customers = []
+        route_li = RouteMaster.objects.all()
+        filter_data = {}
         
-        # Retrieve customer instances for mismatched customers
-        # instances = Customers.objects.filter(pk__in=mismatched_customers)
-        instances = Customers.objects.filter(custom_id__in=custom_ids).exclude(custom_id__in=exclude_ids)
-        
+        if request.GET.get('route_name'):
+            filter_data['route_filter'] = request.GET.get('route_name')
+            
+            # Fetch customers in the specified route
+            customer_instances = Customers.objects.filter(routes__route_name=request.GET.get('route_name'))
+
+            for customer_instance in customer_instances:
+                # Calculate outstanding amount
+                outstanding = OutstandingAmount.objects.filter(
+                    customer_outstanding__customer=customer_instance,
+                    customer_outstanding__product_type="amount"
+                ).aggregate(total_amount=Sum('amount'))['total_amount'] or 0
+
+                # Calculate total collection amount
+                collection = CollectionPayment.objects.filter(
+                    customer=customer_instance
+                ).aggregate(total_amount_received=Sum('amount_received'))['total_amount_received'] or 0
+
+                # Calculate outstanding balance
+                outstanding_balance = outstanding - collection
+
+                # Fetch all invoices for the customer
+                invoice_instances = Invoice.objects.filter(
+                    customer=customer_instance,
+                    is_deleted=False
+                )
+
+                # Calculate invoice balance
+                invoice_balance = sum(
+                    invoice.amout_total - invoice.amout_recieved for invoice in invoice_instances
+                )
+
+                # Check for mismatch
+                if outstanding_balance != invoice_balance:
+                    mismatched_customers.append({
+                        'customer': customer_instance,
+                        'outstanding_balance': outstanding_balance,
+                        'invoice_balance': invoice_balance
+                    })
+
         context = {
-            'instances': instances
+            'instances': mismatched_customers,
+            'route_li': route_li,
+            'filter_data': filter_data,
         }
         return render(request, self.template_name, context)
 
+
+from datetime import time
+from django.utils.timezone import localtime
 class AmountChangesList(View):
     template_name = 'master/amount_changes_list.html'
 
@@ -1036,15 +1173,234 @@ class AmountChangesList(View):
     def get(self, request, *args, **kwargs):
         customer = request.GET.get("customer_pk")
         
-        # Retrieve dates from both CustomerSupply and Invoice models
+        # Retrieve dates from both CustomerSupply, Invoice, and CustomerOutstanding models
         supply_dates = CustomerSupply.objects.filter(customer__pk=customer).values_list("created_date", flat=True)
-        invoice_dates = Invoice.objects.filter(customer__pk=customer).values_list("created_date", flat=True)
+        invoice_dates = Invoice.objects.filter(customer__pk=customer, is_deleted=False).values_list("created_date", flat=True)
+        outstanding_dates = CustomerOutstanding.objects.filter(customer__pk=customer).values_list("created_date", flat=True)
+        collection_dates = CollectionPayment.objects.filter(customer__pk=customer).values_list("created_date", flat=True)
         
-        # Combine and remove duplicates by using a set, then sort the dates
-        unique_dates = sorted({date.date() for date in supply_dates} | {date.date() for date in invoice_dates})
-        
+        # Combine and remove duplicates by using a set, filter out midnight dates, then sort the dates
+        unique_dates = sorted(
+            {localtime(created_date).date() for created_date in supply_dates if created_date} |
+            {localtime(created_date).date() for created_date in invoice_dates if created_date} |
+            {localtime(created_date).date() for created_date in outstanding_dates if created_date} |
+            {localtime(created_date).date() for created_date in collection_dates if created_date}
+        )
+
+        # Add the dates to the context
         context = {
             'instances': unique_dates,
             'customer': customer, 
         }
         return render(request, self.template_name, context)
+    
+def create_outstanding_variation_invoice(request):
+    if request.method == 'POST':
+        date = request.POST.get("date")
+        time = request.POST.get("time")
+        amount = request.POST.get("amount")
+        invoice_no = request.POST.get("invoice_no")
+        amout_recieved = request.POST.get("received_amount")
+        invoice_status = request.POST.get("invoice_status")
+        customer = Customers.objects.get(pk=request.POST.get("customer_id"))
+        
+        try:
+            with transaction.atomic():
+                invoice = Invoice.objects.create(
+                    reference_no=customer.custom_id,
+                    invoice_no=invoice_no,
+                    invoice_type="credit_invoive",
+                    invoice_status=invoice_status,
+                    created_date=datetime.strptime(f"{date} {time}", "%Y-%m-%d %H:%M"),
+                    net_taxable=amount,
+                    amout_total=amount,
+                    amout_recieved=amout_recieved,
+                    customer=customer
+                )
+                
+                product_item = ProdutItemMaster.objects.get(product_name="5 Gallon")
+                
+                InvoiceItems.objects.create(
+                    category=product_item.category,
+                    product_items=product_item,
+                    invoice=invoice,
+                    rate=customer.get_water_rate()
+                )
+                
+                response_data = {
+                    "status": "true",
+                    "title": "Successfully Created",
+                    "message": "Invoice create successfully.",
+                    'redirect': 'true',
+                    "redirect_url": f"{reverse('amount_change_list')}?customer_pk={customer.pk}"
+                }
+                    
+        except IntegrityError as e:
+            # Handle database integrity error
+            response_data = {
+                "status": "false",
+                "title": "Failed",
+                "message": str(e),
+            }
+
+        except Exception as e:
+            # Handle other exceptions
+            response_data = {
+                "status": "false",
+                "title": "Failed",
+                "message": str(e),
+            }
+                
+        return JsonResponse(response_data)
+    
+
+def create_outstanding_variation_outstanding(request):
+    if request.method == 'POST':
+        date = request.POST.get("date")
+        time = request.POST.get("time")
+        amount = request.POST.get("amount")
+        invoice_no = request.POST.get("invoice_no")
+        customer = Customers.objects.get(pk=request.POST.get("customer_id"))
+        
+        try:
+            with transaction.atomic():
+                customer_outstanding = CustomerOutstanding.objects.create(
+                    invoice_no=invoice_no,
+                    product_type="amount",
+                    customer=customer,
+                    created_by=request.user.pk,
+                    created_date=datetime.strptime(f"{date} {time}", "%Y-%m-%d %H:%M"),
+                )
+                
+                OutstandingAmount.objects.create(
+                    customer_outstanding=customer_outstanding,
+                    amount=amount
+                )
+                
+                response_data = {
+                    "status": "true",
+                    "title": "Successfully Created",
+                    "message": "Outstanding create successfully.",
+                    'redirect': 'true',
+                    "redirect_url": f"{reverse('amount_change_list')}?customer_pk={customer.pk}"
+                }
+                    
+        except IntegrityError as e:
+            # Handle database integrity error
+            response_data = {
+                "status": "false",
+                "title": "Failed",
+                "message": str(e),
+            }
+
+        except Exception as e:
+            # Handle other exceptions
+            response_data = {
+                "status": "false",
+                "title": "Failed",
+                "message": str(e),
+            }
+                
+        return JsonResponse(response_data)
+    
+
+def update_outstanding_variation_invoice(request):
+    if request.method == 'POST':
+        date = request.POST.get("date")
+        time = request.POST.get("time")
+        amount = request.POST.get("amount")
+        invoice_no = request.POST.get("invoice_no")
+        amout_recieved = request.POST.get("received_amount")
+        invoice_status = request.POST.get("invoice_status")
+        customer = Customers.objects.get(pk=request.POST.get("customer_id"))
+        
+        try:
+            with transaction.atomic():
+                invoice = Invoice.objects.filter(customer=customer,invoice_no=invoice_no).update(
+                    invoice_no=invoice_no,
+                    invoice_status=invoice_status,
+                    created_date=datetime.strptime(f"{date} {time}", "%Y-%m-%d %H:%M"),
+                    net_taxable=amount,
+                    amout_total=amount,
+                    amout_recieved=amout_recieved,
+                )
+                
+                product_item = ProdutItemMaster.objects.get(product_name="5 Gallon")
+                
+                InvoiceItems.objects.filter(invoice=invoice).update(
+                    category=product_item.category,
+                    product_items=product_item,
+                    rate=customer.get_water_rate()
+                )
+                
+                response_data = {
+                    "status": "true",
+                    "title": "Successfully Updated",
+                    "message": "Invoice Update successfully.",
+                    'redirect': 'true',
+                    "redirect_url": f"{reverse('amount_change_list')}?customer_pk={customer.pk}"
+                }
+                    
+        except IntegrityError as e:
+            # Handle database integrity error
+            response_data = {
+                "status": "false",
+                "title": "Failed",
+                "message": str(e),
+            }
+
+        except Exception as e:
+            # Handle other exceptions
+            response_data = {
+                "status": "false",
+                "title": "Failed",
+                "message": str(e),
+            }
+                
+        return JsonResponse(response_data)
+    
+
+def update_outstanding_variation_outstanding(request):
+    if request.method == 'POST':
+        date = request.POST.get("date")
+        time = request.POST.get("time")
+        amount = request.POST.get("amount")
+        invoice_no = request.POST.get("invoice_no")
+        customer = Customers.objects.get(pk=request.POST.get("customer_id"))
+        
+        try:
+            with transaction.atomic():
+                customer_outstanding = CustomerOutstanding.objects.filter(customer=customer,invoice_no=invoice_no).update(
+                    invoice_no=invoice_no,
+                    created_date=datetime.strptime(f"{date} {time}", "%Y-%m-%d %H:%M"),
+                )
+                
+                OutstandingAmount.objects.filter(customer_outstanding=customer_outstanding).update(
+                    amount=amount
+                )
+                
+                response_data = {
+                    "status": "true",
+                    "title": "Successfully Updated",
+                    "message": "Outstanding Update successfully.",
+                    'redirect': 'true',
+                    "redirect_url": f"{reverse('amount_change_list')}?customer_pk={customer.pk}"
+                }
+                    
+        except IntegrityError as e:
+            # Handle database integrity error
+            response_data = {
+                "status": "false",
+                "title": "Failed",
+                "message": str(e),
+            }
+
+        except Exception as e:
+            # Handle other exceptions
+            response_data = {
+                "status": "false",
+                "title": "Failed",
+                "message": str(e),
+            }
+                
+        return JsonResponse(response_data)

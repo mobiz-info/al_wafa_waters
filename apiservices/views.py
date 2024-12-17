@@ -3,6 +3,7 @@ import uuid
 import base64
 import datetime
 from datetime import datetime, date, time
+from datetime import timedelta
 
 from django.shortcuts import render
 from django.contrib.auth.decorators import login_required
@@ -21,8 +22,9 @@ from django.contrib.auth import authenticate,login
 from django.utils.decorators import method_decorator
 from django.views.decorators.csrf import csrf_exempt
 from django.http import JsonResponse, HttpResponse
-from django.contrib.auth.hashers import make_password, check_password
+from django.core.exceptions import ObjectDoesNotExist
 from django.db.models import Sum, Value, DecimalField, Min
+from django.contrib.auth.hashers import make_password, check_password
 ######rest framwework section
 
 from rest_framework import status
@@ -43,11 +45,6 @@ from master.models import *
 from random import randint
 from datetime import datetime as dt
 from coupon_management.models import *
-from datetime import timedelta
-from django.utils import timezone
-from django.core.exceptions import ObjectDoesNotExist
-from rest_framework.authentication import SessionAuthentication, BasicAuthentication
-from rest_framework.permissions import IsAuthenticated
 
 
 from accounts.models import *
@@ -2450,6 +2447,11 @@ class Staff_New_Order(APIView):
                     new_order_number = 1
 
                 order_number = f"{new_order_number}"
+
+                # Ensure the generated order number is unique
+                while Staff_Orders.objects.filter(order_number=order_number).exists():
+                    new_order_number += 1
+                    order_number = f"{new_order_number}"
                 order_date = request.data.get('order_date')
 
                 # delivery_date = request.data.get('delivery_date')
@@ -2816,40 +2818,73 @@ class Myclient_API(APIView):
     authentication_classes = [BasicAuthentication]
     permission_classes = [IsAuthenticated]
     serializer_class = CustomersSerializers
-
+    
     def post(self, request, *args, **kwargs):
         try:
             userid = request.data.get("id")
             route_id = request.data.get("route_id")
 
-            # Fetch the staff user
-            staff = CustomUser.objects.get(id=userid)
+            
+            # Case 1: Only userid is provided
+            if userid and not route_id:
+                try:
+                    # Fetch the staff user
+                    staff = CustomUser.objects.get(id=userid)
+                    print("Staff found:", staff)
 
-            # Fetch van details where the staff is either a driver or a salesman
-            vans = Van.objects.filter(Q(driver=staff) | Q(salesman=staff)).first()
+                    # Fetch van details where the staff is a driver or salesman
+                    vans = Van.objects.filter(Q(driver=staff) | Q(salesman=staff)).first()
+                    if vans:
+                        assign_routes = Van_Routes.objects.filter(van=vans).values_list('routes', flat=True)
 
-            if vans is not None:
-                if not route_id:
-                    van = Van.objects.get(van_id=vans.pk)
-                    assign_routes = Van_Routes.objects.filter(van=van).values_list('routes', flat=True)
-                    routes_list = RouteMaster.objects.filter(route_id__in=assign_routes).values_list('route_id', flat=True)
+                        routes_list = RouteMaster.objects.filter(route_id__in=assign_routes).values_list('route_id', flat=True)
 
-                    customer_list = Customers.objects.filter(routes__pk__in=routes_list)
-                else:
+                        customer_list = Customers.objects.filter(routes__pk__in=routes_list)
+                        serializer = self.serializer_class(customer_list, many=True)
+                        return Response(serializer.data)
+                    else:
+                        return Response({'status': False, 'message': 'No van assigned to the user'})
+                except CustomUser.DoesNotExist:
+                    return Response({'status': False, 'message': 'User not found'})
+
+            # Case 2: Only route_id is provided
+            elif route_id and not userid:
+                try:
                     customer_list = Customers.objects.filter(routes__pk=route_id)
+                    serializer = self.serializer_class(customer_list, many=True)
+                    return Response(serializer.data)
+                except Exception as e:
+                    return Response({'status': False, 'message': 'Invalid route ID'})
 
-                # Serialize the filtered customers
-                serializer = self.serializer_class(customer_list, many=True)
+            # Case 3: Both userid and route_id are provided
+            elif userid and route_id:
+                try:
+                    staff = CustomUser.objects.get(id=userid)
 
-                return Response(serializer.data)
+                    vans = Van.objects.filter(Q(driver=staff) | Q(salesman=staff)).first()
+                    if vans:
 
-            return Response({'status': False, 'message': 'No van assigned to the user'})
+                        # Check if the route is valid for the van
+                        assign_routes = Van_Routes.objects.filter(van=vans).values_list('routes', flat=True)
+                        if route_id in assign_routes:
+                            customer_list = Customers.objects.filter(routes__pk=route_id)
+                            serializer = self.serializer_class(customer_list, many=True)
+                            return Response(serializer.data)
+                        else:
+                            return Response({'status': False, 'message': 'Route not assigned to the user'})
+                    else:
+                        return Response({'status': False, 'message': 'No van assigned to the user'})
+                except CustomUser.DoesNotExist:
+                    return Response({'status': False, 'message': 'User not found'})
 
-        except CustomUser.DoesNotExist:
-            return Response({'status': False, 'message': 'User not found'})
+            # Case 4: Neither userid nor route_id is provided
+            else:
+                return Response({'status': False, 'message': 'Provide either user ID or route ID'})
+
         except Exception as e:
             return Response({'status': False, 'message': str(e)})
 
+    
 class GetCustodyItem_API(APIView):
     authentication_classes = [BasicAuthentication]
     permission_classes = [IsAuthenticated]
@@ -3617,18 +3652,32 @@ class create_customer_supply(APIView):
                     if vanstock.stock >= item_data['quantity']:
                     
                         vanstock.stock -= suply_items.quantity
+                        
+                        customer_supply.van_stock_added = True
+                        customer_supply.save()
+                        
                         if customer_supply.customer.sales_type != "FOC" :
                             vanstock.sold_count += suply_items.quantity
                         
                         if customer_supply.customer.sales_type == "FOC" :
                             vanstock.foc += suply_items.quantity
+                            
+                            customer_supply.van_foc_added = True
+                            customer_supply.save()
                         
                         if suply_items.product.product_name == "5 Gallon" :
                             total_fivegallon_qty += Decimal(suply_items.quantity)
                             vanstock.empty_can_count += collected_empty_bottle
                             
-                            if customer_supply.customer.customer_type == "WATCHMAN" :
-                                vanstock.foc += customer_supply.allocate_bottle_to_free
+                            customer_supply.van_emptycan_added = True
+                            customer_supply.save()
+                            
+                        if customer_supply.customer.customer_type == "WATCHMAN" or allocate_bottle_to_free > 0 :
+                            vanstock.foc += customer_supply.allocate_bottle_to_free
+                            
+                            customer_supply.van_foc_added = True
+                            customer_supply.save()
+                            
                         vanstock.save()
                         
                     else:
@@ -3668,6 +3717,9 @@ class create_customer_supply(APIView):
                         bottle_count = bottle_count.first()
                         bottle_count.custody_issue += allocate_bottle_to_custody
                         bottle_count.save()
+                        
+                    customer_supply.custody_added = True
+                    customer_supply.save()
                     
                 invoice_generated = False
                 
@@ -3679,6 +3731,9 @@ class create_customer_supply(APIView):
                             outstanding_instance = CustomerOutstandingReport.objects.get(customer=customer_supply.customer,product_type="emptycan")
                             outstanding_instance.value -= Decimal(balance_empty_bottle)
                             outstanding_instance.save()
+                            
+                        customer_supply.outstanding_bottle_added = True
+                        customer_supply.save()
                     
                     elif total_fivegallon_qty > Decimal(customer_supply.collected_empty_bottle) :
                         balance_empty_bottle = total_fivegallon_qty - Decimal(customer_supply.collected_empty_bottle)
@@ -3705,7 +3760,10 @@ class create_customer_supply(APIView):
                                 value=outstanding_product.empty_bottle,
                                 customer=outstanding_product.customer_outstanding.customer
                             )
-                
+                        
+                        customer_supply.outstanding_bottle_added = True
+                        customer_supply.save()
+                            
                     supply_items = CustomerSupplyItems.objects.filter(customer_supply=customer_supply) # supply items
                     
                     # Update CustomerSupplyStock
@@ -3776,6 +3834,9 @@ class create_customer_supply(APIView):
                                             value=outstanding_coupon.count,
                                             customer=outstanding_coupon.customer_outstanding.customer
                                         )
+                                        
+                                    customer_supply.outstanding_coupon_added = True
+                                    customer_supply.save()
                                 
                                 elif total_fivegallon_qty > len(collected_coupon_ids) :
                                     balance_coupon = total_fivegallon_qty - len(collected_coupon_ids)
@@ -3784,7 +3845,7 @@ class create_customer_supply(APIView):
                                         customer=customer_supply.customer,
                                         product_type="coupons",
                                         created_by=request.user.id,
-                                        created_date=datetime.today()
+                                        created_date=datetime.datetime.datetime.today()
                                     )
                                     
                                     if (customer_coupon:=CustomerCouponStock.objects.filter(customer__pk=customer_supply_data['customer'],coupon_method="manual")).exists():
@@ -3808,6 +3869,9 @@ class create_customer_supply(APIView):
                                             value=balance_coupon,
                                             customer=customer_supply.customer,
                                             )
+                                        
+                                    customer_supply.outstanding_coupon_added = True
+                                    customer_supply.save()
                                         
                             elif request.data.get('coupon_method') == "digital" :
                                 try : 
@@ -3854,6 +3918,9 @@ class create_customer_supply(APIView):
                                             value=outstanding_coupon.count,
                                             customer=outstanding_coupon.customer_outstanding.customer
                                         )
+                                        
+                                    customer_supply.outstanding_coupon_added = True
+                                    customer_supply.save()
                                 
                                 elif total_fivegallon_qty > Decimal(total_coupon_collected) :
                                     balance_coupon = total_fivegallon_qty - Decimal(total_coupon_collected)
@@ -3883,6 +3950,10 @@ class create_customer_supply(APIView):
                                             value=balance_coupon,
                                             customer=customer_supply.customer,
                                             )
+                                        
+                                    customer_supply.outstanding_coupon_added = True
+                                    customer_supply.save()
+                                    
                         elif Customers.objects.get(pk=customer_supply_data['customer']).sales_type == "CASH" or Customers.objects.get(pk=customer_supply_data['customer']).sales_type == "CREDIT" :
                             if customer_supply.amount_recieved < customer_supply.subtotal:
                                 balance_amount = customer_supply.subtotal - customer_supply.amount_recieved
@@ -3911,6 +3982,9 @@ class create_customer_supply(APIView):
                                         customer=outstanding_amount.customer_outstanding.customer
                                     )
                                     
+                                customer_supply.outstanding_amount_added = True
+                                customer_supply.save()
+                                    
                             elif customer_supply.amount_recieved > customer_supply.subtotal:
                                 balance_amount = customer_supply.amount_recieved - customer_supply.subtotal
                                 
@@ -3928,6 +4002,9 @@ class create_customer_supply(APIView):
                                 outstanding_instance=CustomerOutstandingReport.objects.get(customer=customer_supply.customer,product_type="amount")
                                 outstanding_instance.value -= Decimal(balance_amount)
                                 outstanding_instance.save()
+                                
+                                customer_supply.outstanding_amount_added = True
+                                customer_supply.save()
                                 
                         # elif Customers.objects.get(pk=customer_supply_data['customer']).sales_type == "CREDIT" :
                             # pass
@@ -4939,7 +5016,7 @@ class CustodyItemReturnAPI(APIView):
             vanstock.return_count += quantity
             vanstock.save()
             
-            # date_part = datetime.today().strftime('%Y%m%d')
+            # date_part = datetime.datetime.today().strftime('%Y%m%d')
             # try:
             #     invoice_last_no = Invoice.objects.filter(is_deleted=False).latest('created_date')
             #     last_invoice_number = invoice_last_no.invoice_no
@@ -5304,6 +5381,7 @@ class CollectionAPI(APIView):
         # Filter CustomerSupply objects based on the user
         invoices_customer_pk = Invoice.objects.filter(invoice_status="non_paid",is_deleted=False).exclude(amout_total=0).values_list("customer__pk")
         collection = Customers.objects.filter(pk__in=invoices_customer_pk,sales_staff=user)
+        
         if customer_id:
             collection = collection.filter(pk=customer_id)
         if collection.exists():
@@ -5450,11 +5528,17 @@ class AddCollectionPayment(APIView):
                 invoice_numbers.append(invoice.invoice_no)
                 # Calculate the amount due for this invoice
                 due_amount = invoice.amout_total - invoice.amout_recieved
+                payment_amount = due_amount
                 
                 # If remaining_amount is greater than zero and there is still due amount for the current invoice
                 if remaining_amount != Decimal('0') and due_amount != Decimal('0'):
                     # Calculate the payment amount for this invoice
-                    payment_amount = min(due_amount, remaining_amount)
+                    if due_amount < 0 or due_amount == remaining_amount:
+                        payment_amount = due_amount
+                    elif due_amount > remaining_amount:
+                        payment_amount = due_amount - remaining_amount
+                    elif due_amount > remaining_amount:
+                        payment_amount = remaining_amount - due_amount
                     
                     # Update the invoice balance and amount received
                     invoice.amout_recieved += payment_amount
@@ -5473,8 +5557,9 @@ class AddCollectionPayment(APIView):
                         outstanding_instance.value -= payment_amount
                         outstanding_instance.save()
                     
-                    # Update the remaining amount
-                    remaining_amount -= payment_amount
+                    if payment_amount > 0:
+                        # Update the remaining amount
+                        remaining_amount -= payment_amount
                     
                     # If the invoice is fully paid, update its status
                     if invoice.amout_recieved == invoice.amout_total:
@@ -8647,7 +8732,7 @@ class StaffIssueOrdersListAPIView(APIView):
     def get(self, request):
         query = request.data.get("q")
         datefilter = request.data.get("date")
-        print("datefilter", datefilter)
+        # print("datefilter", datefilter)
 
         instances = Staff_Orders.objects.all().order_by('-created_date')
 
@@ -8834,9 +8919,9 @@ class StaffIssueOrdersAPIView(APIView):
 
                                     vanstock = VanStock.objects.create(
                                         created_by=request.user.id,
-                                        created_date=datetime.now(),
+                                        created_date=issue.staff_order_id.order_date,
                                         modified_by=request.user.id,
-                                        modified_date=datetime.now(),
+                                        modified_date=issue.staff_order_id.order_date,
                                         stock_type='opening_stock',
                                         van=van
                                     )
@@ -8847,11 +8932,15 @@ class StaffIssueOrdersAPIView(APIView):
                                         van_stock=vanstock,
                                     )
 
-                                    if VanProductStock.objects.filter(created_date=datetime.today().date(), product=issue.product_id, van=van).exists():
-                                        van_product_stock = VanProductStock.objects.get(created_date=datetime.today().date(), product=issue.product_id, van=van)
+                                    if VanProductStock.objects.filter(created_date=issue.staff_order_id.order_date, product=issue.product_id, van=van).exists():
+                                        van_product_stock = VanProductStock.objects.get(created_date=issue.staff_order_id.order_date, product=issue.product_id, van=van)
+                                        van_product_stock.stock += int(quantity_issued)
+                                        van_product_stock.save()
+
+
                                     else:
                                         van_product_stock = VanProductStock.objects.create(
-                                            created_date=datetime.now().date(),
+                                            created_date=issue.staff_order_id.order_date,
                                             product=issue.product_id,
                                             van=van,
                                             stock=int(quantity_issued))
@@ -9996,7 +10085,6 @@ class ProductRouteSalesReportAPIView(APIView):
         )
 
         return Response(serializer.data, status=status.HTTP_200_OK)
-    
 
 from rest_framework.parsers import JSONParser
 class SalesInvoicesAPIView(APIView):
@@ -10081,6 +10169,62 @@ class SalesInvoicesAPIView(APIView):
         }
 
         return Response(response_data, status=200)
+       
+# from rest_framework.parsers import JSONParser
+# class SalesInvoicesAPIView(APIView):
+#     authentication_classes = [BasicAuthentication]
+#     permission_classes = [IsAuthenticated]
+#     parser_classes = [JSONParser]  
+
+#     def get(self, request):
+#         data = request.data
+#         start_date = data.get('start_date')
+#         end_date = data.get('end_date')
+#         invoice_type = data.get('invoice_types')
+
+#         if not start_date:
+#             start_date = datetime.today().date()
+#         else:
+#             start_date = datetime.strptime(start_date, '%Y-%m-%d').date()
+
+#         if not end_date:
+#             end_date = datetime.today().date()
+#         else:
+#             end_date = datetime.strptime(end_date, '%Y-%m-%d').date()
+        
+        
+#         route = Van_Routes.objects.get(van__salesman=request.user).routes
+        
+#         instances = Invoice.objects.filter(
+#             created_date__date__gte=start_date,
+#             created_date__date__lte=end_date,
+#             customer__routes=route
+#         )
+        
+#         if invoice_type:
+#             instances = instances.filter(invoice_type=invoice_type)
+        
+        # serializer = SalesInvoiceSerializer(instances, many=True)
+        
+#         response_data = {
+#             "StatusCode": status.HTTP_200_OK,
+#             "status": status.HTTP_200_OK,
+#             "data": {
+#                 "invoices": serializer.data,
+#                 "total_taxable": instances.aggregate(total_net_taxable=Sum('net_taxable'))['total_net_taxable'] or 0,
+#                 "total_vat": instances.aggregate(total_vat=Sum('vat'))['total_vat'] or 0,
+#                 "total_amount": instances.aggregate(total_amount=Sum('amout_total'))['total_amount'] or 0,
+#                 "total_amount_collected": instances.aggregate(total_amout_recieved=Sum('amout_recieved'))['total_amout_recieved'] or 0,
+#                 "filter_data": {
+#                     "invoice_types": invoice_type,
+#                     "start_date": start_date,
+#                     "end_date": end_date,
+#                     "route_name": route.route_name,
+#                 }
+#             },
+#         }
+
+#         return Response(response_data, status=status.HTTP_200_OK)
     
 class CustomerSupplyListAPIView(APIView):
     authentication_classes = [BasicAuthentication]
@@ -10326,3 +10470,267 @@ class CustomerRegistrationRequestView(APIView):
         return Response(response_data, status=status_code)
     
     
+class MarketingExecutiveSalesmanListAPIView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request, *args, **kwargs):
+        
+        marketing_executive = request.user
+        
+        if marketing_executive.user_type != 'marketing_executive':
+            return Response(
+                {"error": "User is not authorized to access this data."},
+                status=status.HTTP_403_FORBIDDEN
+            )
+
+        assigned_routes = Van_Routes.objects.filter(
+            van__salesman=marketing_executive
+        ).values_list('routes__route_id', flat=True)
+        
+        salesmen = CustomUser.objects.filter(
+            user_type='Salesman',
+            salesman_van__van_master__routes__route_id__in=assigned_routes
+        ).distinct()
+        
+        serializer = SalesmanSerializer(salesmen, many=True)
+        return Response(serializer.data, status=status.HTTP_200_OK)
+    
+    
+class LeadCustomersView(APIView):
+    authentication_classes = [BasicAuthentication]
+    permission_classes = [IsAuthenticated]
+    
+    def get(self, request, *args, **kwargs):
+        many = True
+        
+        instances = LeadCustomers.objects.filter(created_by=request.user.pk)
+        
+        if request.GET.get("pk"):
+            instances = instances.filter(pk=request.GET.get("pk")).first()
+            many = False
+        
+        serializer = LeadCustomersSerializer(instances,many=many)
+        
+        status_code = status.HTTP_200_OK
+        response_data = {
+            "status": status_code,
+            "data": serializer.data,
+        }
+        
+        return Response(response_data, status=status_code)
+    
+    def post(self, request, *args, **kwargs):
+        serializer = LeadCustomersSerializer(data=request.data, context={'request': request})
+        try:
+            with transaction.atomic():
+                if serializer.is_valid():
+                    instance = serializer.save(
+                        created_by=request.user.pk,
+                    )
+                    LeadCustomersStatus.objects.create(
+                        status="pending",
+                        customer_lead=instance,
+                    )
+                    
+                    status_code = status.HTTP_201_CREATED
+                    response_data = {
+                        "StatusCode": status_code,
+                        "status": status_code,
+                        "data": serializer.data,
+                    }
+                else:
+                    status_code = status.HTTP_400_BAD_REQUEST
+                    response_data = {
+                        "StatusCode": status_code,
+                        "status": status_code,
+                        "message": serializer.errors,
+                    }
+                        
+        except IntegrityError as e:
+            status_code = status.HTTP_400_BAD_REQUEST
+            response_data = {
+                "StatusCode": 400,
+                "status": status_code,
+                "title": "Failed",
+                "message": str(e),
+            }
+
+        except Exception as e:
+            status_code = status.HTTP_400_BAD_REQUEST
+            response_data = {
+                "StatusCode": 400,
+                "status": status_code,
+                "title": "Failed",
+                "message": str(e),
+            }
+        
+        return Response(response_data, status=status_code)
+    
+
+class LeadCustomersCancelReasonsView(APIView):
+    authentication_classes = [BasicAuthentication]
+    permission_classes = [IsAuthenticated]
+    
+    def get(self, request, *args, **kwargs):
+        many = True
+        
+        instances = LeadCustomersReason.objects.all()
+        serializer = LeadCustomersReasonSerializer(instances,many=many)
+        
+        status_code = status.HTTP_200_OK
+        response_data = {
+            "status": status_code,
+            "data": serializer.data,
+        }
+        
+        return Response(response_data, status=status_code)
+    
+    def post(self, request, *args, **kwargs):
+        reason = request.data.get('reason')
+
+        if not reason:
+            return Response({
+                "status": status.HTTP_400_BAD_REQUEST,
+                "message": "Reason is required"
+            }, status=status.HTTP_400_BAD_REQUEST)
+        
+        new_reason = LeadCustomersReason.objects.create(reason=reason)
+
+        serializer = LeadCustomersReasonSerializer(new_reason)
+
+        status_code = status.HTTP_201_CREATED
+        response_data = {
+            "status": status_code,
+            "data": serializer.data,
+        }
+        
+        return Response(response_data, status=status_code)
+    
+    
+class LeadCustomersUpdateStatusView(APIView):
+    authentication_classes = [BasicAuthentication]
+    permission_classes = [IsAuthenticated]
+    
+    def post(self, request, *args, **kwargs):
+        try:
+            with transaction.atomic():
+                lead_customer_id = request.data.get("customer_lead")
+                new_status = request.data.get("status")
+
+                if not lead_customer_id:
+                    return Response({
+                        "status": status.HTTP_400_BAD_REQUEST,
+                        "message": "Customer Lead ID is required."
+                    }, status=status.HTTP_400_BAD_REQUEST)
+
+                if new_status not in ['cancel', 'closed']:
+                    return Response({
+                        "status": status.HTTP_400_BAD_REQUEST,
+                        "message": "Invalid status. Allowed values are 'cancel' or 'closed'."
+                    }, status=status.HTTP_400_BAD_REQUEST)
+
+                customer_lead = LeadCustomers.objects.filter(pk=lead_customer_id).first()
+                if not customer_lead:
+                    return Response({
+                        "status": status.HTTP_404_NOT_FOUND,
+                        "message": "Lead Customer not found."
+                    }, status=status.HTTP_404_NOT_FOUND)
+
+                LeadCustomersStatus.objects.create(
+                    status=new_status,
+                    customer_lead=customer_lead,
+                    created_by=request.user.pk
+                )
+
+                if new_status == 'cancel':
+                    reason_id = request.data.get("reason")
+                    if not reason_id:
+                        return Response({
+                            "status": status.HTTP_400_BAD_REQUEST,
+                            "message": "Reason is required for canceling a lead."
+                        }, status=status.HTTP_400_BAD_REQUEST)
+
+                    reason = LeadCustomersReason.objects.filter(pk=reason_id).first()
+                    if not reason:
+                        return Response({
+                            "status": status.HTTP_404_NOT_FOUND,
+                            "message": "Reason not found."
+                        }, status=status.HTTP_404_NOT_FOUND)
+
+                    LeadCustomersCancelReason.objects.create(
+                        customer_lead=customer_lead,
+                        reason=reason
+                    )
+
+                if new_status == 'closed':
+                    remark = request.data.get("remark")
+                    if not remark:
+                        return Response({
+                            "status": status.HTTP_400_BAD_REQUEST,
+                            "message": "Remark is required for closing a lead."
+                        }, status=status.HTTP_400_BAD_REQUEST)
+
+                    LeadCustomersClosedRemark.objects.create(
+                        customer_lead=customer_lead,
+                        remark=remark
+                    )
+
+                return Response({
+                    "status": status.HTTP_200_OK,
+                    "message": f"Status updated to {new_status} successfully."
+                }, status=status.HTTP_200_OK)
+
+        except Exception as e:
+            return Response({
+                "status": status.HTTP_400_BAD_REQUEST,
+                "message": str(e)
+            }, status=status.HTTP_400_BAD_REQUEST)
+            
+
+class CustomerAccountDeleteRequestView(APIView):
+    authentication_classes = [BasicAuthentication]
+    permission_classes = [IsAuthenticated]
+    
+    def post(self, request, *args, **kwargs):
+        serializer = CustomerAccountDeleteRequestSerializer(data=request.data, context={'request': request})
+        try:
+            with transaction.atomic():
+                if serializer.is_valid():
+                    
+                    instance = serializer.save(
+                        created_by=request.user.pk,
+                    )
+                    
+                    status_code = status.HTTP_201_CREATED
+                    response_data = {
+                        "StatusCode": status_code,
+                        "status": status_code,
+                        "data": serializer.data,
+                    }
+                else:
+                    status_code = status.HTTP_400_BAD_REQUEST
+                    response_data = {
+                        "StatusCode": status_code,
+                        "status": status_code,
+                        "message": serializer.errors,
+                    }
+                        
+        except IntegrityError as e:
+            status_code = status.HTTP_400_BAD_REQUEST
+            response_data = {
+                "StatusCode": 400,
+                "status": status_code,
+                "title": "Failed",
+                "message": str(e),
+            }
+
+        except Exception as e:
+            status_code = status.HTTP_400_BAD_REQUEST
+            response_data = {
+                "StatusCode": 400,
+                "status": status_code,
+                "title": "Failed",
+                "message": str(e),
+            }
+        
+        return Response(response_data, status=status_code)

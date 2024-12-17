@@ -336,6 +336,8 @@ class Customer_List(View):
         query = request.GET.get("q")
         route_filter = request.GET.get('route_name')
         customer_type_filter = request.GET.get('customer_type')
+        non_visit_reason = request.GET.get('non_visited_reason')
+        created_date_filter = request.GET.get('created_date', None)
 
         # Start with all customers
         user_li = Customers.objects.all()
@@ -358,9 +360,36 @@ class Customer_List(View):
         if customer_type_filter:
             user_li = user_li.filter(sales_type=customer_type_filter)
             filter_data['customer_type'] = customer_type_filter
+        if created_date_filter:
+            # Convert the string date to a datetime object
+            created_date_obj = datetime.strptime(created_date_filter, '%Y-%m-%d')
+            
+            # Convert to a timezone-aware datetime object
+            created_date_obj = timezone.make_aware(created_date_obj, timezone.get_current_timezone())
+            
+            # Filter users based on the created date (without time part)
+            user_li = user_li.filter(created_date__date=created_date_obj.date())
+            
+            # Store the filter data to retain it in the template
+            filter_data = {'created_date': created_date_filter}
+        else:
+            user_li = user_li.all()  # If no filter, return all users
+            filter_data = {}
+        
+        if non_visit_reason:
+            # Filter NonvisitReport by the selected reason
+            customer_ids = NonvisitReport.objects.filter(reason__id=non_visit_reason).values_list('customer_id', flat=True)
+            
+            # Filter the main customer queryset
+            user_li = user_li.filter(customer_id__in=customer_ids)
+            
+            # Update the filter_data dictionary
+            filter_data['non_visit_reason'] = non_visit_reason
 
         # Get all route names for the dropdown
         route_li = RouteMaster.objects.all()
+        non_visit_reasons = NonVisitReason.objects.all()
+
         
         log_activity(
             created_by=request.user, 
@@ -372,12 +401,12 @@ class Customer_List(View):
             'route_filter': route_filter,
             'q': query,
             'filter_data': filter_data,
+            'non_visit_reasons':non_visit_reasons
         }
 
 
 
         return render(request, self.template_name, context)
-    
 class Latest_Customer_List(View):
     template_name = 'accounts/latest_customer_list.html'
 
@@ -621,7 +650,10 @@ class PrintInactiveCustomerList(View):
                 customer.days_since_last_supply = days_since
                 customer.on_vacation = check_vacation_status(customer.pk)
                 filtered_customers.append(customer)
-
+        log_activity(
+            created_by=request.user,
+            description=f"Viewed inactive customer Print with filters: {filter_data}"
+        )
         # Set context for rendering template
         context = {
             'inactive_customers': filtered_customers,
@@ -759,7 +791,7 @@ def edit_customer(request,pk):
             previous_rate =cust_Data.rate
 
             if form.is_valid():
-                print("previous_rate",previous_rate)
+                # print("previous_rate",previous_rate)
                 data = form.save(commit=False)
                 data.emirate = data.location.emirate
                 data.save()
@@ -882,7 +914,7 @@ def customer_list_excel(request):
         table_border_format = workbook.add_format({'border':1})
         worksheet.conditional_format(4, 0, len(df.index)+4, len(df.columns) - 1, {'type':'cell', 'criteria': '>', 'value':0, 'format':table_border_format})
         merge_format = workbook.add_format({'align': 'center', 'bold': True, 'font_size': 16, 'border': 1})
-        worksheet.merge_range('A1:K2', f'Al-Wafa Water', merge_format)
+        worksheet.merge_range('A1:K2', f'Al Wafa Water', merge_format)
         merge_format = workbook.add_format({'align': 'center', 'bold': True, 'border': 1})
         worksheet.merge_range('A3:K3', f'    Customer List   ', merge_format)
         # worksheet.merge_range('E3:H3', f'Date: {def_date}', merge_format)
@@ -1037,31 +1069,61 @@ def visit_days_assign(request, customer_id):
 class CustomerRateHistoryListView(View):
     template_name = 'accounts/customer_rate_history.html'
 
-    def get(self, request, *args, **kwargs):
-        selected_route = request.GET.get('route_name')
+    def get(self, request, pk, *args, **kwargs):
+        customer_instance = Customers.objects.get(pk=pk)
+        customer_rate_instances = CustomerPriceChange.objects.filter(customer=customer_instance)
         
-        # Fetch all routes
-        routes = RouteMaster.objects.all()
-
-        # Fetch customer rate histories based on the selected route
-        if selected_route:
-            histories = CustomerRateHistory.objects.filter(customer__routes__route_name=selected_route).order_by('-created_date')
-        else:
-            histories = CustomerRateHistory.objects.all().order_by('-created_date')
-        
-        created_by = request.user.username
-        description = f"Viewed customer rate histories with route filter: {selected_route if selected_route else 'All'}"
-        log_activity(created_by, description)
+        new_rate_form = CustomerPriceChangeForm()
+        # Log the activity for viewing customer rate history
+        log_activity(
+            created_by=request.user,
+            description=f"Viewed rate history for customer: {customer_instance.customer_name})"
+        )
         
         context = {
-            'histories': histories,
-            'routes': routes,
-            'filter_data': {
-                'selected_route': selected_route,
-            },
+            "customer_instance": customer_instance,
+            "customer_rate_instances": customer_rate_instances,
+            "new_rate_form": new_rate_form,
         }
         return render(request, self.template_name, context)
     
+    def post(self, request, pk, *args, **kwargs):
+        customer_instance = Customers.objects.get(pk=pk)
+        
+        form = CustomerPriceChangeForm(data=request.POST)
+        
+        if form.is_valid():
+            data = form.save(commit=False)
+            data.created_by = str(request.user.id)
+            data.old_price = customer_instance.rate
+            data.customer = customer_instance
+            data.save()
+            
+            customer_instance.rate=data.new_price
+            customer_instance.save()
+            # Log the activity for rate update
+            log_activity(
+                created_by=request.user,
+                description=f"Updated rate for customer: {customer_instance.customer_name} (ID: {pk}) to {data.new_price}"
+            )
+            
+            response_data = {
+                "status": "true",
+                "title": "Successfully Created",
+                "message": "Rate Updated successfully.",
+                'redirect': 'true',
+                "redirect_url": reverse('customer_rate_history', kwargs={'pk': pk})
+            }
+            return HttpResponse(json.dumps(response_data), content_type='application/javascript')
+        else:
+            # Log the failed update attempt
+            log_activity(
+                created_by=request.user,
+                description=f"Failed to update rate for customer: {customer_instance.customer_name} (ID: {pk}) due to invalid form data"
+            )
+
+            messages.error(request, 'Invalid form data. Please check the input.')
+       
 class NonVisitedCustomersView(View):
     template_name = 'accounts/non_visited_customers.html'
     paginate_by = 50  # Optional: For pagination, you can set this value

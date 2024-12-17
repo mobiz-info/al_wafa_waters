@@ -2025,21 +2025,11 @@ class StaffOrdersDetailsSerializer(serializers.ModelSerializer):
             return obj.product_id.product_name
 
     def get_empty_bottle_count(self, obj):
-        # Check if the product is "5 Gallon"
-        if obj.product_id.product_name == "5 Gallon":
-            # Fetch the van associated with the staff order
-            van = Van.objects.filter(salesman_id__id=obj.staff_order_id.created_by).first()
-            
-            if van:
-                # Query the VanProductStock for empty bottles of the 5 Gallon product
-                empty_bottle_stock = VanProductStock.objects.filter(
-                    van=van,  # Now using the correct field 'van'
-                    product=obj.product_id,
-                    empty_can_count__gt=0  # Adjust the field and condition as necessary
-                ).values_list('empty_can_count', flat=True).first()
-
-                return empty_bottle_stock if empty_bottle_stock else 0
-        return None
+        empty_bottle_stock = 0
+        if obj.product_id.product_name == "5 Gallon" and (van_instance:=Van.objects.filter(salesman_id__id=obj.staff_order_id.created_by)).exists():
+            empty_bottle_stock = VanProductStock.objects.get(van=van_instance.first(),product=obj.product_id,created_date=obj.staff_order_id.created_date.date()).empty_can_count
+        
+        return empty_bottle_stock
     #------------------------------------Location Api -----------------------------------------------------
 
 class LocationUpdateSerializer(serializers.ModelSerializer):
@@ -2355,8 +2345,9 @@ class SalesReportSerializer(serializers.ModelSerializer):
             return "cash_invoice"
         elif obj.amount_recieved <= 0 and obj.customer.sales_type != "FOC":
             return "credit_invoive"
-        return "all" 
-    
+        return "all"
+
+
 class SalesInvoiceSerializer(serializers.ModelSerializer):
     created_date = serializers.DateTimeField(format="%Y-%m-%d %H:%M:%S")
     customer_name = serializers.CharField(source='customer.customer_name', read_only=True)
@@ -2369,7 +2360,7 @@ class SalesInvoiceSerializer(serializers.ModelSerializer):
          
         
 class CustomersSupplysSerializer(serializers.ModelSerializer):
-    
+    customer_name = serializers.CharField(source='customer.customer_name')
     building_no = serializers.CharField(source='customer.building_name')
     door_house_no = serializers.CharField(source='customer.door_house_no')
     supplied = serializers.SerializerMethodField()
@@ -2378,7 +2369,7 @@ class CustomersSupplysSerializer(serializers.ModelSerializer):
     
     class Meta:
         model = CustomerSupply
-        fields = ['customer_code', 'building_no', 'door_house_no', 'supplied', 'sales_mode']
+        fields = ['customer_code','customer_name', 'building_no', 'door_house_no', 'supplied', 'sales_mode']
 
     def get_supplied(self, obj):
         coupon_products = CustomerSupplyItems.objects.filter(customer_supply=obj).exclude(customer_supply__customer__sales_type="CASH COUPON")
@@ -2558,3 +2549,34 @@ class CustomerRegistrationRequestSerializer(serializers.ModelSerializer):
             instance.visit_schedule = visit_schedule
             instance.save()
         return instance
+    
+    
+class LeadCustomersSerializer(serializers.ModelSerializer):
+    status = serializers.SerializerMethodField()
+
+    class Meta:
+        model = LeadCustomers
+        fields = ['id','name','mobile_no','address','next_following_date','status','customer_type','routes','emirate','location','created_date']
+        read_only_fields = ['id','created_date','status']
+        
+    def get_status(self,obj):
+        return LeadCustomersStatus.objects.filter(customer_lead=obj).latest("created_date").get_status_display()
+
+
+class LeadCustomersUpdateStatusSerializer(serializers.ModelSerializer):
+
+    class Meta:
+        model = LeadCustomersStatus
+        fields = ['customer_lead','status']
+        
+class LeadCustomersReasonSerializer(serializers.ModelSerializer):
+
+    class Meta:
+        model = LeadCustomersReason
+        fields = ['id','reason']
+        
+class CustomerAccountDeleteRequestSerializer(serializers.ModelSerializer):
+
+    class Meta:
+        model = CustomerAccountDeleteRequest
+        fields = ['id','customer','reason']

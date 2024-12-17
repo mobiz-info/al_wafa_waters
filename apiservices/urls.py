@@ -16,6 +16,7 @@ urlpatterns = [
     # Customer Sign in
     path('customers/',Customer_API.as_view()),
     path('customers/<str:id>/',Customer_API.as_view()),
+    path('customers-delete-request/',CustomerAccountDeleteRequestView.as_view()),
     
     path('customer-login/',CustomerLoginApi.as_view()),
     path('customer-next-visit-date/',NextVisitDateAPI.as_view()),
@@ -327,5 +328,11 @@ urlpatterns = [
     ############################# Customer App ##############################################
     path('customer-registration-request/', CustomerRegistrationRequestView.as_view(), name='customer_registration_request'),
     
+    path('marketing_executive_salesmen/', MarketingExecutiveSalesmanListAPIView.as_view(), name='marketing_executive_salesmen'),
+    
+    
+    path('customer-lead/',LeadCustomersView.as_view(), name='customer_lead_api'),
+    path('customer-lead-cancel-reasons/',LeadCustomersCancelReasonsView.as_view(), name='customer_lead_cancel_reason'),
+    path('customer-lead-update-status/',LeadCustomersUpdateStatusView.as_view(), name='customer_lead_update_status'),
 
 ]

@@ -35,14 +35,16 @@ from django.urls import reverse
 
 from .forms import BottleAllocationForm
 from django.db.models import Max
-
+from accounts.views import log_activity
 
 
 def get_van_coupon_bookno(request):
     van_id = request.GET.get("vanId")
     coupon_type = request.GET.get("productName")
+    stock_date = request.GET.get("stockDate")
+    print("stock_date",stock_date)
     
-    if (instances := VanCouponStock.objects.filter(van__pk=van_id,coupon__coupon_type__coupon_type_name=coupon_type,stock__gt=0)).exists():
+    if (instances := VanCouponStock.objects.filter(created_date=stock_date,van__pk=van_id,coupon__coupon_type__coupon_type_name=coupon_type,stock__gt=0)).exists():
         instance = instances.values_list('coupon__pk')
         stock_instances = CouponStock.objects.filter(couponbook__pk__in=instance)
         serialized = couponStockSerializers(stock_instances, many=True)
@@ -79,7 +81,11 @@ def van(request):
         route_names = [van_route.routes.route_name for van_route in van_routes]
         routes_assigned[van.van_id] = route_names
         
-    # print("Routes Assigned:", routes_assigned)  
+    # Log the activity for viewing van information
+    log_activity(
+        created_by=request.user,
+        description="Viewed all vans and their assigned routes."
+    ) 
     context = {
         'all_van': all_van,
         'routes_assigned': routes_assigned,
@@ -97,9 +103,19 @@ def create_van(request):
             data.branch_id = request.user.branch_id
             data.created_by = str(request.user.id)
             data.save()
+            # Log successful van creation
+            log_activity(
+                created_by=request.user,
+                description=f"Van created successfully: {data.van_make}"
+            )
             messages.success(request, 'Van created successfully!')
             return redirect('van')
         else:
+            # Log failed attempt to create van
+            log_activity(
+                created_by=request.user,
+                description="Failed to create van due to invalid form data."
+            )
             messages.error(request, 'Invalid form data. Please check the input.')
     else:
         form = VanForm()
@@ -108,6 +124,11 @@ def create_van(request):
 
 def edit_van(request, van_id):
     van = get_object_or_404(Van, van_id=van_id)
+    # Log the initiation of the edit action
+    log_activity(
+        created_by=request.user,
+        description=f"Opened edit van form for {van.van_make} "
+    )
     if request.method == 'POST':
         form = EditVanForm(request.POST, instance=van)
         if form.is_valid():
@@ -116,18 +137,39 @@ def edit_van(request, van_id):
             data.modified_date = datetime.now()
             data.branch_id = request.user.branch_id
             data.save()
+            # Log successful edit
+            log_activity(
+                created_by=request.user,
+                description=f"Successfully edited van: {van.van_make}"
+            )
             return redirect('van')
+        else:
+            # Log form submission failure
+            log_activity(
+                created_by=request.user,
+                description=f"Failed to edit van: {van.van_make}  due to invalid form data."
+            )
     else:
         form = EditVanForm(instance=van)
     return render(request, 'van_management/edit_van.html', {'form': form, 'van': van})
 
 def view_van(request, van_id):
     van = get_object_or_404(Van, van_id=van_id)
+    # Log the view activity
+    log_activity(
+        created_by=request.user,
+        description=f"Viewed details of van: {van.van_make}."
+    )
     return render(request, 'van_management/view_van.html', {'van': van})
 
 def delete_van(request, van_id):
     van = Van.objects.get(van_id=van_id)
     if request.method == 'POST':
+        # Log the deletion action
+        log_activity(
+            created_by=request.user,
+            description=f"Deleted van: {van.van_make}"
+        )
         van.delete()
         return redirect('van')
     return render(request, 'master/confirm_delete.html', {'van': van})
@@ -137,6 +179,11 @@ def delete_van(request, van_id):
 # Van staff assigning
 def view_association(request):
     vans_with_associations = Van.objects.exclude(driver=None).exclude(salesman=None)
+    # Log the activity
+    log_activity(
+        created_by=request.user,
+        description="Viewed van-driver-salesman associations."
+    )
     return render(request, 'van_management/driver_salesman_list.html', {'vans_with_associations': vans_with_associations})
 
 def create_association(request):
@@ -152,9 +199,23 @@ def create_association(request):
             van.driver = driver_instance
             van.salesman = salesman_instance
             van.save()
+            # Log activity for association creation
+            log_activity(
+                created_by=request.user,
+                description=(
+                    f"Created association: Van {van.van_make} "
+                    f"with Driver {driver_instance.username} and "
+                    f"Salesman {salesman_instance.username} "
+                )
+            )
             return redirect('/van_assign')
     else:
         form = VanAssociationForm()
+        # Log activity for accessing the form
+        log_activity(
+            created_by=request.user,
+            description="Accessed the van-driver-salesman association creation form."
+        )
     return render(request, 'van_management/create_assign.html', {'form': form})
 
 
@@ -170,10 +231,23 @@ def edit_assign(request, van_id):
             van.driver = driver_instance
             van.salesman = salesman_instance
             van.save()
+            # Log activity for editing the assignment
+            log_activity(
+                created_by=request.user,
+                description=(
+                    f"Edited association for Van {van.van_make}  "
+                    f"Driver updated to {driver_instance.username} "
+                    f"Salesman updated to {salesman_instance.username} "
+                )
+            )
             return redirect('/van_assign')
     else:
         form = EditAssignForm(van)
-
+        # Log activity for accessing the edit form
+        log_activity(
+            created_by=request.user,
+            description=f"Accessed the edit form for Van {van.van_make} "
+        )
     return render(request, 'van_management/edit_assign.html', {'form': form, 'van': van})
 
 
@@ -184,6 +258,11 @@ def delete_assign(request, van_id):
         van.driver = None
         van.salesman = None
         van.save()
+        # Log activity for deleting the assignment
+        log_activity(
+            created_by=request.user,
+            description=(
+                f"Deleted association for Van {van.van_make}"))
         return redirect('/van_assign')
     return render(request, 'master/confirm_delete_assign.html', {'van': van})
 
@@ -200,6 +279,11 @@ def route_assign(request,van_id):
             route = data.routes
             route_exists = Van_Routes.objects.filter(van = van_data,routes = route).exists()
             if route_exists:
+                # Log the duplicate route assignment attempt
+                log_activity(
+                    created_by=request.user,
+                    description=(
+                        f"Attempted to assign a duplicate route '{route.routes.route_name}' "))
                 messages.success(request, 'Route is already assigned..')
                 context = {'all_van' : all_van,"form":form,"van_data":van_data}
                 return render(request, 'van_management/assignroute_tovan.html',context)
@@ -207,9 +291,23 @@ def route_assign(request,van_id):
             data.created_by = str(request.user)
             data.created_date = datetime.now()
             data.save()
+            # Log successful route assignment
+            log_activity(
+                created_by=request.user,
+                description=(
+                    f"Successfully assigned route '{route.routes.route_name}' ")
+            )
             messages.success(request, 'Van Route Assigned successfully!')
             return redirect('route_assign',van_id)
         else:
+            # Log invalid form submission
+            log_activity(
+                created_by=request.user,
+                description=(
+                    f"Invalid form submission while assigning a route to "
+                    f"Van {van_data.van_make} "
+                )
+            )
             messages.success(request, 'Invalid form data. Please check the input.')
             return render(request, 'van_management/assignroute_tovan.html',context)
     return render(request, 'van_management/assignroute_tovan.html',context)
@@ -220,8 +318,17 @@ def delete_route_assign (request):
     van = Van_Routes.objects.get(van_route_id=van_route_id)
     if request.method == 'POST':
         van.delete()
+        # Log successful deletion
+        log_activity(
+            created_by=request.user,
+            description=(
+                f"Deleted route '{van.routes.route_name}' assigned to "
+                f"Van {van.van_make} "
+            )
+        )
         return redirect('route_assign',van_id)
     return render(request, 'master/confirm_delete.html',{'van': van} )
+
 
 
 
@@ -904,7 +1011,7 @@ def excel_download(request, route_id, def_date, trip):
 
         # Merge cells and write other information with borders
         merge_format = workbook.add_format({'align': 'center', 'bold': True, 'font_size': 16, 'border': 1})
-        worksheet.merge_range('A1:N2', f'Al-Wafa Water', merge_format)
+        worksheet.merge_range('A1:N2', f'Al Wafa Water', merge_format)
         merge_format = workbook.add_format({'align': 'center', 'bold': True, 'border': 1})
         worksheet.merge_range('A3:D3', f'Route:    {route.route_name}    {trip}', merge_format)
         worksheet.merge_range('E3:I3', f'Date: {def_date}', merge_format)
@@ -927,6 +1034,11 @@ class ExpenseHeadList(View):
     def get(self, request, *args, **kwargs):
         expence_heads = ExpenseHead.objects.all()
         context = {'expence_heads':expence_heads}
+        # Log access to the ExpenseHead list view
+        log_activity(
+            created_by=request.user,
+            description=f"Viewed the list of Expense Heads"
+        )
         return render(request, self.template_name, context)
 
 
@@ -938,16 +1050,31 @@ class ExpenseHeadAdd(View):
     def get(self, request, *args, **kwargs):
         form = self.form_class
         context = {'form': form}
+        # Log activity for viewing the add expense head page
+        log_activity(
+            created_by=request.user,
+            description=f"Accessed the 'Add Expense Head' page at {datetime.now()}"
+        )
         return render(request, self.template_name, context)
 
     def post(self, request, *args, **kwargs):
         form = self.form_class(request.POST)
         if form.is_valid:
-            form.save()
+            expense_head = form.save()
+            # Log activity for successfully adding an Expense Head
+            log_activity(
+                created_by=request.user,
+                description=f"Successfully added Expense Head '{expense_head.name}' at {datetime.now()}"
+            )
             return redirect('expensehead_list')
         else:
+            # Log activity for form validation failure
+            log_activity(
+                created_by=request.user,
+                description=f"Failed to add Expense Head due to validation errors at {datetime.now()}")
             return render(request, self.template_name, {'form':form})
-        
+
+            
 
 class ExpenseHeadEdit(View):
     template_name = 'van_management/expensehead_edit.html'
@@ -1339,6 +1466,55 @@ class EditProductView(View):
                     count = scrap_count + washing_count
                     # print(count)
                     item.return_count -= int(count)
+                    item.save()
+                
+                elif item.product.product_name == "5 Gallon" and stock_type == "damage_count":
+                    # print("return")
+                    scrap_count = int(request.POST.get('damage_scrap_count'))
+                    washing_count = int(request.POST.get('damage_washing_count'))
+                    
+                    # print(scrap_count)
+                    # print(washing_count)
+                    
+                    OffloadDamageStocks.objects.create(
+                        created_by=request.user.id,
+                        created_date=datetime.today(),
+                        salesman=item.van.salesman,
+                        van=item.van,
+                        product=item.product,
+                        scrap_count=scrap_count,
+                        washing_count=washing_count
+                    )
+                    
+                    if scrap_count > 0 :
+                        if not ScrapProductStock.objects.filter(created_date__date=datetime.today().date(),product=item.product).exists():
+                            scrap_instance=ScrapProductStock.objects.create(created_by=request.user.id,created_date=datetime.today(),product=item.product)
+                        else:
+                            scrap_instance=ScrapProductStock.objects.get(created_date__date=datetime.today().date(),product=item.product)
+                        scrap_instance.quantity = scrap_count
+                        scrap_instance.save()
+                        
+                        if ScrapStock.objects.filter(product=scrap_instance.product).exists():
+                            scrap_stock = ScrapStock.objects.get_or_create(product=scrap_instance.product)
+                            scrap_stock.quantity += scrap_count
+                            scrap_stock.save()
+                    
+                    if washing_count > 0 :
+                        if not WashingProductStock.objects.filter(created_date__date=datetime.today().date(),product=item.product).exists():
+                            washing_instance=WashingProductStock.objects.create(created_by=request.user.id,created_date=datetime.today(),product=item.product)
+                        else:
+                            washing_instance=WashingProductStock.objects.get(created_date__date=datetime.today().date(),product=item.product)
+                        washing_instance.quantity = washing_count
+                        washing_instance.save()
+                        
+                        if WashingStock.objects.filter(product=scrap_instance.product).exists():
+                            washing_stock = WashingStock.objects.get_or_create(product=scrap_instance.product)
+                            washing_stock.quantity += washing_count
+                            washing_stock.save()
+                        
+                    count = scrap_count + washing_count
+                    # print(count)
+                    item.damage_count -= int(count)
                     item.save()
                     
                 else : 

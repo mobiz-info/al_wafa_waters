@@ -2,13 +2,13 @@ from django.db import models
 import uuid
 from django.db.models.signals import post_save
 from django.dispatch import receiver
-from datetime import date
+from datetime import date, timedelta
 from accounts.models import *
 from coupon_management.models import COUPON_METHOD_CHOICES, Coupon, CouponLeaflet, CouponType, FreeLeaflet, NewCoupon
 from product.models import *
 from django.http import HttpResponse
 from django.db.models import Count,Sum
-
+from invoice_management.models import InvoiceItems
 COUPON_TYPE = (
     ('cash_coupon','Cash Coupon'),
     ('credit_coupon','Credit Coupon'),
@@ -55,7 +55,13 @@ class CustodyCustom(models.Model):
     created_date = models.DateTimeField(auto_now_add=True,blank=True, null=True)
     modified_by = models.CharField(max_length=20, null=True, blank=True)
     modified_date = models.DateTimeField(blank=True, null=True)
+    
+    class Meta:
+        ordering = ('created_date',)
 
+    def __str__(self):
+        return str(self.custody_custom_id)
+    
 class CustodyCustomItems(models.Model):
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     custody_custom = models.ForeignKey(CustodyCustom, on_delete=models.CASCADE,null=True,blank=True)
@@ -90,6 +96,37 @@ class CustomerCustodyStock(models.Model):
 
     def __str__(self):
         return str(self.id)
+    
+    def get_eligibility_status(self, from_date, to_date):
+        try:
+            product_condition = EligibleCustomerConditions.objects.get(category_name=self.product)
+        except EligibleCustomerConditions.DoesNotExist:
+            return {"status": "Not Eligible", "count": 0}
+        
+        import datetime
+        try:
+            from_date = datetime.datetime.strptime(str(from_date), '%Y-%m-%d').date()
+            to_date = datetime.datetime.strptime(str(to_date), '%Y-%m-%d').date()
+        except ValueError:
+            from_date = datetime.datetime.today().date() - timedelta(days=product_condition.days)
+            to_date = datetime.datetime.today().date()
+
+        supply_qty = (
+            CustomerSupply.objects.filter(
+                created_date__date__range=(from_date, to_date),
+                customer__pk=self.customer.pk
+            )
+            .aggregate(total_supply_quantity=Sum('customersupplyitems__quantity'))['total_supply_quantity']
+        ) or 0
+        
+        if supply_qty >= product_condition.moq or 0:
+            status = "Eligible"
+            eligible_count = supply_qty - product_condition.moq
+        else:
+            status = "Not Eligible"
+            eligible_count = supply_qty - product_condition.moq
+            
+        return {"status": status, "eligible_count": eligible_count,"supply_count":supply_qty,"condition_count":product_condition.moq}
 
     
 
@@ -450,7 +487,15 @@ class CustomerSupply(models.Model):
     created_date = models.DateTimeField()
     modified_by = models.CharField(max_length=20, null=True, blank=True)
     modified_date = models.DateTimeField(auto_now=True ,blank=True, null=True)
+    
     is_edited = models.BooleanField(default=False)
+    outstanding_amount_added = models.BooleanField(default=False)
+    outstanding_coupon_added = models.BooleanField(default=False)
+    outstanding_bottle_added = models.BooleanField(default=False)
+    van_stock_added = models.BooleanField(default=False)
+    van_foc_added = models.BooleanField(default=False)
+    van_emptycan_added = models.BooleanField(default=False)
+    custody_added = models.BooleanField(default=False)
     
     class Meta:
         ordering = ('-created_date',)
@@ -467,7 +512,13 @@ class CustomerSupply(models.Model):
             "manual_coupon": value_leaf,
             "digital_coupon": CustomerSupplyDigitalCoupon.objects.filter(customer_supply=self).aggregate(total_count=Sum('count'))['total_count'] or 0
         }
-            
+        
+    def get_rate(self):
+        try:
+            invoice_item = InvoiceItems.objects.filter(product_items__product_name="5 Gallon",invoice__invoice_no=self.invoice_no).first()
+            return invoice_item.rate / invoice_item.qty
+        except:
+            return 0
 
 class CustomerSupplyItems(models.Model):
         id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
@@ -669,3 +720,26 @@ class InactiveCustomers(models.Model):
     
     def __str__(self):
         return f"{self.customer.customer_name} - In Active Days: {self.inactive_days}"
+    
+class EligibleCustomerConditions(models.Model):
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    category_name = models.ForeignKey(ProdutItemMaster, on_delete=models.CASCADE)
+    moq = models.PositiveIntegerField(default=0)
+    days = models.PositiveIntegerField(default=0)
+    
+    def __str__(self):
+        return f"{self.category_name.product_name}"
+    
+    
+class CustomerAccountDeleteRequest(models.Model):
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    customer = models.ForeignKey(Customers, on_delete=models.CASCADE)
+    reason = models.TextField()
+    
+    created_by = models.CharField(max_length=200)
+    created_date = models.DateTimeField(auto_now_add=True)
+    modified_by = models.CharField(max_length=200, null=True, blank=True)
+    modified_date = models.DateTimeField(blank=True, null=True)
+    
+    def __str__(self):
+        return f"{self.customer.customer_name}"
