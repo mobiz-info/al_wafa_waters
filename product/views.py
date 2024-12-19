@@ -15,6 +15,7 @@ from django.core.exceptions import ObjectDoesNotExist
 from django.shortcuts import redirect, get_object_or_404
 from django.contrib.auth.decorators import login_required
 
+from accounts.views import log_activity
 from coupon_management.serializers import couponStockSerializers
 from master.functions import generate_form_errors
 from .forms import *
@@ -483,15 +484,6 @@ def staffIssueOrdersCreate(request, staff_order_details_id):
                         
                     if van_limit:
                         if 0 < int(quantity_issued) <= int(product_stock.quantity):
-                            
-                            # Check the delivery date
-                            order_date = issue.staff_order_id.order_date
-                            # print("order_date",issue.staff_order_id.order_date)
-                            today = date.today()
-
-                            # if issue.staff_order_id.order_date == today:
-                            # **Today's Delivery: Update VanProductStock**
-                            
                             # Creating Staff Issue Order
                             data = form.save(commit=False)
                             # data.created_by = request.user.id
@@ -552,6 +544,8 @@ def staffIssueOrdersCreate(request, staff_order_details_id):
                             issue.issued_qty += int(quantity_issued)
                             issue.save()
                             
+                            log_activity(request.user, f"Issued {quantity_issued} of {issue.product_id.product_name} to van {van.van_id}")
+                            
                             response_data = {
                                 "status": "true",
                                 "title": "Successfully Created",
@@ -559,45 +553,6 @@ def staffIssueOrdersCreate(request, staff_order_details_id):
                                 'redirect': 'true',
                                 "redirect_url": reverse('staff_issue_orders_list')
                             }
-                            # else:
-                            #     # **Next Day Delivery: Create NextDayStockRequest**
-                            #     # Creating Staff Issue Order
-                            #     data = form.save(commit=False)
-                            #     data.modified_by = request.user.id
-                            #     data.modified_date = datetime.now()
-                            #     data.created_date = issue.staff_order_id.order_date
-                            #     data.product_id = issue.product_id
-                            #     data.staff_Orders_details_id = issue
-                            #     data.stock_quantity = stock_quantity
-                            #     data.quantity_issued = int(data.quantity_issued) + int(quantity_issued)
-                            #     data.van = van
-                            #     data.save()
-                                
-                                
-                            #     # Updating ProductStock
-                            #     product_stock.quantity -= int(quantity_issued)
-                            #     product_stock.save()
-                            #     # Create NextDayStockRequest
-                            #     NextDayStockRequest.objects.create(
-                            #         product=issue.product_id,
-                            #         van=van,
-                            #         issued_quantity=str(quantity_issued),  # Assuming quantity is stored as string
-                            #         date=issue.staff_order_id.order_date,
-                            #         created_by=request.user.id,
-                            #         modified_by=request.user.id,
-                            #         modified_date=datetime.now()
-                            #     )
-                            #     # Update issued quantity
-                            #     issue.issued_qty += int(quantity_issued)
-                            #     issue.save()
-
-                            #     response_data = {
-                            #         "status": "true",
-                            #         "title": "Successfully Created",
-                            #         "message": "Next day stock request created successfully.",
-                            #         'redirect': 'true',
-                            #         "redirect_url": reverse('staff_issue_orders_list')
-                            #     }
                         else:
                             response_data = {
                                 "status": "false",
