@@ -131,7 +131,8 @@ class Customers(models.Model):
     is_calling_customer = models.BooleanField(default=False)
     five_g_count_limit = models.IntegerField(default=0)
     eligible_foc = models.IntegerField(default=0)
-    
+    is_deleted = models.BooleanField(default=False)
+
     def __str__(self):
         return str(self.customer_name)
     
