@@ -1131,6 +1131,10 @@ class ExpenseList(View):
             expenses = expenses.filter(expence_type_id=fil_expe)
         expense_types = ExpenseHead.objects.all()
         context = {'expenses': expenses, 'expense_types':expense_types}
+        log_activity(
+            created_by=request.user,
+            description="Viewed the expense list."
+        )
         return render(request, self.template_name, context)
 
 class ExpenseAdd(View):
@@ -1146,6 +1150,10 @@ class ExpenseAdd(View):
         form = self.form_class(request.POST)
         if form.is_valid():
             form.save()
+            log_activity(
+                created_by=request.user,
+                description=f"Added a new expense."
+            )
             return redirect('expense_list')
         else:
             context = {'form': form}
@@ -1166,7 +1174,10 @@ class ExpenseEdit(View):
         form = self.form_class(request.POST, instance=expense)
         if form.is_valid():
             form.save()
-            print('updated')
+            log_activity(
+                created_by=request.user,
+                description=f"Edited expense: {expense.remarks}"
+            )
             return redirect('expense_list')
         else:
             context = {'form': form, 'expense':expense}
@@ -1183,6 +1194,10 @@ class ExpenseDelete(View):
     def post(self, request, expense_id, *args, **kwargs):
         expense = Expense.objects.get(expense_id=expense_id)
         expense.delete()
+        log_activity(
+            created_by=request.user,
+            description=f"Deleted expense: {expense.remarks}"
+        )
         return redirect('expense_list')
     
     
@@ -1582,13 +1597,26 @@ class EditCouponView(View):
             van_coupon_stock.stock = 0
             van_coupon_stock.save()
             
+            log_activity(
+                created_by=request.user.id,
+                description=f"Updated van coupon stock for book number {book_number} to 0."
+            )
+            
             product_stock = ProductStock.objects.get(branch=van_coupon_stock.van.branch_id,product_name__product_name=coupon_instance.coupon_type.coupon_type_name)
             product_stock.quantity += 1
             product_stock.save()
+            log_activity(
+                created_by=request.user.id,
+                description=f"Updated product stock for {coupon_instance.coupon_type.coupon_type_name}, increased by 1."
+            ) 
             
             coupon = CouponStock.objects.get(couponbook=coupon_instance)
             coupon.coupon_stock = "company"
             coupon.save()
+            log_activity(
+                created_by=request.user.id,
+                description=f"Updated coupon stock for book number {book_number} to 'company'."
+            )
             
             OffloadCoupon.objects.create(
                 created_by=request.user.id,
@@ -1599,6 +1627,10 @@ class EditCouponView(View):
                 quantity = 1,
                 stock_type="stock"
             )
+            log_activity(
+                created_by=request.user.id,
+                description=f"Offloaded coupon for book number {book_number}."
+            )
             
         response_data = {
                 "status": "true",
@@ -1607,7 +1639,6 @@ class EditCouponView(View):
                 'reload': 'true',
             }
         
-        return JsonResponse(response_data)
     
 def salesman_requests(request):
     
@@ -1671,6 +1702,12 @@ def EditBottleAllocation(request, route_id=None):
             bottle_allocation = form.save(commit=False)
             bottle_allocation.created_by = request.user.username
             bottle_allocation.save()
+            
+            log_activity(
+                created_by=request.user,
+                description=f"Edited Bottle Allocation for route ID: {route_id}."
+            )
+            
             return redirect('bottle_allocation')  # Replace with your list view name
     else:
         form = BottleAllocationForm(initial={'route': route})
@@ -1727,12 +1764,16 @@ def excess_bottle_count_create(request):
             if not created:
                 van_product_stock.excess_bottle += excess_bottle_count.bottle_count
                 van_product_stock.save()
-
+            
+            log_activity(
+                created_by=request.user,
+                description=f"Created excess bottle count entry for van {excess_bottle_count.van} with {excess_bottle_count.bottle_count} bottles."
+            )
+            
             return redirect('excess_bottle_count_list')
     else:
         form = ExcessBottleCountForm()
     return render(request, 'van_management/excess_bottle_count_create.html', {'form': form})
-
 # Update view
 def excess_bottle_count_update(request, pk):
     # Retrieve the existing ExcessBottleCount instance
