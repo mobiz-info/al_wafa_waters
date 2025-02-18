@@ -40,4 +40,13 @@ path('cancel_request/<uuid:diffbottles_id>/', CancelRequestView.as_view(), name=
 path('reassign_request/<uuid:diffbottles_id>/',ReassignRequestView.as_view(), name='reassign_request'),
 
 path('new_customer_request', new_customer_request.as_view(), name='new_customer_request'),
+path('new-registered-customers', new_registered_customers, name='new_registered_customers'),
+
+path('customer_request_type_list', CustomerRequestType_List.as_view(), name='customer_request_type_list'),
+path('customer_requesttype_create',CustomerRequestType_Create.as_view(), name='customer_requesttype_create'),
+path('customer_requesttype_edit/<str:pk>', CustomerRequestType_Edit.as_view(), name='customer_requesttype_edit'),
+path('customer_requesttype_delete/<uuid:pk>/', CustomerRequestType_Delete.as_view(), name='customer_requesttype_delete'),
+
+
+
 ]

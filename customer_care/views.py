@@ -29,7 +29,7 @@ import calendar
 from datetime import date, timedelta
 from django.db.models import Max
 from apiservices.notification import *
-
+from master.functions import log_activity
 
 
 class RequestType_List(View):
@@ -42,8 +42,8 @@ class RequestType_List(View):
         return render(request, self.template_name, context)
 
 class RequestType_Create(View):
-    template_name = 'customer_care/requesttype_create.html'
-    form_class = RequestType_Create_Form
+    template_name = 'customer_care/customer_requesttype_create.html'
+    form_class = CustomerRequestTypeForm
 
     @method_decorator(login_required)
     def get(self, request, *args, **kwargs):
@@ -835,3 +835,139 @@ class ReassignRequestView(View):
             'diff_bottle': diff_bottle,
         }
         return render(request, 'customer_care/reassign_request_form.html', context)
+
+def new_registered_customers(request):
+    # Fetch filters from GET parameters
+    start_date = request.GET.get('start_date')
+    end_date = request.GET.get('end_date')
+    status_filter = request.GET.get('status')
+    location_filter = request.GET.get('location')
+    query = request.GET.get('q')
+
+    # Query the CustomerRegistrationRequest model
+    requests = CustomerRegistrationRequest.objects.all().order_by('-created_date')
+    print("requests",requests)
+    if start_date and end_date:
+        requests = requests.filter(created_date__range=(start_date,end_date))
+
+    if status_filter:
+        requests = requests.filter(status=status_filter)
+    if location_filter:
+        requests = requests.filter(location_id=location_filter)
+        
+    if query:
+        requests = requests.filter(
+            Q(name__icontains=query) |
+            Q(phone_no__icontains=query) |
+            Q(building_name__icontains=query) |
+            Q(room_or_flat_no__icontains=query) |
+            Q(floor_no__icontains=query) |
+            Q(email_id__icontains=query) |
+            Q(no_of_5g_bottles_required__icontains=query) |
+            Q(visit_schedule__icontains=query) |
+            Q(status__icontains=query) |
+            Q(location__location_name__icontains=query) |
+            Q(emirate__name__icontains=query)
+        )
+    
+
+    # Fetch data for filters
+    emirates = EmirateMaster.objects.all()
+    locations = LocationMaster.objects.all()
+    log_activity(
+            created_by=request.user,
+            description=f"Viewed Newly Registered customer list with filters: Start Date = {start_date}, End Date = {end_date}, Status = {status_filter}, Location = {location_filter}, Query = {query}"
+        )
+
+    context = {
+        'requests': requests,
+        'emirates': emirates,
+        'locations': locations,
+        'status_filter': status_filter,
+        'location_filter': location_filter,
+        'filter_data': {
+            'start_date': start_date,
+            'end_date': end_date,
+            'q': query,
+
+        },
+    }
+    return render(request, 'customer_care/new_registered_customers.html', context)
+
+
+class CustomerRequestType_List(View):
+    template_name = 'customer_care/customer_requesttype_list.html'
+
+    @method_decorator(login_required)
+    def get(self, request, *args, **kwargs):
+        request_li = CustomerRequestType.objects.all()
+        context = {'request_li': request_li}
+        return render(request, self.template_name, context)
+    
+class CustomerRequestType_Create(View):
+    template_name = 'customer_care/customerrequesttype_create.html'
+    form_class = CustomerRequestTypeForm
+
+    @method_decorator(login_required)
+    def get(self, request, *args, **kwargs):
+        context = {'form': self.form_class}
+        return render(request, self.template_name, context)
+
+    @method_decorator(login_required)
+    def post(self, request, *args, **kwargs):
+        form = self.form_class(request.POST, request.FILES)
+        if form.is_valid():
+            data = form.save(commit=False)
+            data.created_by = str(request.user.id)
+            data.save()
+            messages.success(request, 'Customer Request Successfully Added.', 'alert-success')
+            return redirect('customer_request_type_list')
+        else:
+            #print(form.errors)
+            for field, errors in form.errors.items():
+                for error in errors:
+                    print(f"Field: {field}, Error: {error}")
+            messages.success(request, 'Data is not valid.', 'alert-danger')
+            context = {'form': form}
+            return render(request, self.template_name, context)
+class CustomerRequestType_Edit(View):
+    template_name = 'customer_care/customer_requesttype_edit.html'
+    form_class = CustomerRequestType_Edit_Form
+
+    @method_decorator(login_required)
+    def get(self, request, pk, *args, **kwargs):
+        rec = CustomerRequestType.objects.get(id=pk)
+        form = self.form_class(instance=rec)
+        context = {'form': form,'rec':rec}
+        return render(request, self.template_name, context)
+
+    @method_decorator(login_required)
+    def post(self, request, pk, *args, **kwargs):
+        rec = CustomerRequestType.objects.get(id=pk)
+        form = self.form_class(request.POST, request.FILES, instance=rec)
+        if form.is_valid():
+            data = form.save(commit=False)
+            data.modified_by = str(request.user.id)
+            data.modified_date = datetime.now()
+            data.save()
+            messages.success(request, 'Request Data Successfully Updated', 'alert-success')
+            return redirect('customer_request_type_list')
+        else:
+            #print(form.errors)
+            messages.success(request, 'Data is not valid.', 'alert-danger')
+            context = {'form': form}
+            return render(request, self.template_name, context)
+
+class CustomerRequestType_Delete(View):
+
+    def get(self, request, pk, *args, **kwargs):
+        rec = get_object_or_404(CustomerRequestType, id=pk)
+        rec.delete()
+        messages.success(request, 'Request type deleted successfully', 'alert-success')
+        return redirect('customer_request_type_list')
+
+    def post(self, request, pk, *args, **kwargs):
+        rec = get_object_or_404(CustomerRequestType, id=pk)
+        rec.delete()
+        messages.success(request, 'Request type deleted successfully', 'alert-success')
+        return redirect('customer_request_type_list')

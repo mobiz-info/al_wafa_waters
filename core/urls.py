@@ -6,6 +6,7 @@ from core import settings
 from master import views as general_views
 
 urlpatterns = [
+    path('ckeditor/', include('ckeditor_uploader.urls')),
 
     path('', include('master.urls')),
     path('admin/', admin.site.urls),
@@ -17,7 +18,6 @@ urlpatterns = [
     path('product/', include('product.urls')),
     path('van/', include('van_management.urls')),
     path('client/', include('client_management.urls')),
-    path('api/',include('apiservices.urls')),
     path('coupon/',include('coupon_management.urls')),
     path('care/',include('customer_care.urls')),
     path('order/',include('order.urls')),
@@ -26,6 +26,13 @@ urlpatterns = [
     path('tax_settings/',include(('tax_settings.urls'),namespace='tax_settings')),
     path('invoice-management/',include(('invoice_management.urls'),namespace='invoice')),
     path('credit-note/',include(('credit_note.urls'),namespace='credit_note')),
+    
+    path('api/',include('apiservices.urls')),
+    
+    # path('api-auth/', include('rest_framework.urls')),
+    # path('erp-api/v1/auth/', include(('api_erp.v1.authentication.urls','authentication'), namespace='api_erp_v1_authentication')),
+    
+    # path('erp-api/v1/master/',include(('api_erp.v1.master.urls','master'), namespace='api_erp_v1_master')),
     
     re_path(r'^media/(?P<path>.*)$', serve, {'document_root': settings.MEDIA_ROOT}),
     re_path(r'^static/(?P<path>.*)$', serve, {'document_root': settings.STATIC_ROOT}),

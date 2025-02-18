@@ -6,6 +6,7 @@ from django import template
 from django.db.models import Q, Sum, F, Case, When, IntegerField
 
 from accounts.models import Customers
+from apiservices.serializers import CouponLeafSerializer, FreeLeafletSerializer
 from client_management.models import *
 from sales_management.models import *
 
@@ -93,7 +94,19 @@ def get_outstanding_coupons(customer_id, date):
     return outstanding_coupons.get('total_coupons') or 0
 
 
-
+@register.simple_tag
+def get_customer_coupon_leafs(customer_id):
+    leafs = {}
+    coupon_ids_queryset = CustomerCouponItems.objects.filter(customer_coupon__customer_id=customer_id).values_list('coupon__pk', flat=True)
+    
+    coupon_leafs = CouponLeaflet.objects.filter(used=False,coupon__pk__in=list(coupon_ids_queryset)).order_by("leaflet_name")
+    coupon_leafs_data = CouponLeafSerializer(coupon_leafs, many=True).data
+    
+    free_leafs = FreeLeaflet.objects.filter(used=False,coupon__pk__in=list(coupon_ids_queryset)).order_by("leaflet_name")
+    free_leafs_data = FreeLeafletSerializer(free_leafs, many=True).data
+    
+    leafs = coupon_leafs_data + free_leafs_data
+    return leafs
 
 @register.simple_tag
 def get_customer_outstanding_aging(route=None):
