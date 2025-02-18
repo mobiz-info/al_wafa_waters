@@ -193,6 +193,37 @@
                             </table>
                         </div>
                     </div>
+                    
+                    
+                    {% if damage_bottle_instances %}
+                    <div id="table-container">
+                        <div class="card-body">
+                            <table  class="table table-bordered text-wrap" style="width: 100%">
+                                <thead>
+                                    <tr>
+                                        <th class="text-center text-bold" colspan="10">Damage Count</th>
+                                    </tr>
+                                    <tr>
+                                        <th scope="col" style="text-align:center;">Sl No</th>
+                                        <th scope="col" style="text-align:center;">Product</th>
+                                        <th scope="col" style="text-align:center;">Quantity</th>
+                                        <th scope="col" style="text-align:center;">Reason</th>
+                                    </tr>
+                                </thead>
+                               <tbody>
+                                    {% for row in damage_bottle_instances %}
+                                    <tr>
+                                        <td>{{ forloop.counter }}</td>
+                                        <td>{{ row.product.product_name }}</td>
+                                        <td style="text-align:center;">{{ row.quantity}}</td>
+                                        <td>{{ row.reason.reason }}</td>
+                                    </tr>
+                                    {% endfor %}
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                    {% endif %}
 
                     {% comment %} <div id="table-container">
                         <div class="card-body">
@@ -355,6 +386,12 @@
                                     </tr>
                                     {% endfor %}
                                 </tbody>
+                                <tfoot>
+                                    <tr>
+                                        <td colspan="4" style="text-align:right; font-weight:bold;">Total Quantity</td>
+                                        <td style="text-align:center; font-weight:bold;">{{ foc_total_quantity }}</td>
+                                    </tr>
+                                </tfoot>
                             </table>
                         </div>
                     </div>
@@ -367,8 +404,8 @@
                                 </tr>
                                 <tr>
                                     <th style="text-align:center;">Sl No</th>
-                                    <th style="text-align:left;" scope="col">Customer Name</th>
                                     <th style="text-align:left;" scope="col">Customer code</th>
+                                    <th style="text-align:left;" scope="col">Customer Name</th>
                                     {% comment %} <th style="text-align:center;" scope="col">QTY Sold</th>
                                     <th style="text-align:center;" scope="col">FOC QTY</th> {% endcomment %}
                                     <th style="text-align:center;" scope="col">Total QTY</th>
@@ -382,10 +419,11 @@
                                     <td colspan="8" style="text-align: center;font-weight: bold;">A. 5 Gallon Sale</td>
                                 </tr>
                                 {% for sale in five_gallon_cash_sales %}
+                                
                                 <tr>
-                                    <td style="text-align:center;{% if sale.is_edited %}background-color:#c0dfdf !important;{% endif %}">{{forloop.counter}}</td>
-                                    <td style="text-align:left;{% if sale.is_edited %}background-color:#c0dfdf !important;{% endif %}">{{sale.customer.customer_name}}</td>
-                                    <td style="text-align:left;{% if sale.is_edited %}background-color:#c0dfdf !important;{% endif %}">{{sale.customer.custom_id}}</td>
+                                    <td style="text-align:center;{% if sale.is_edited %}background-color:#c0dfdf !important;{% endif %}{% if sale.is_repeated_customer %}background-color:#FF0000 !important; color: FFFFFF !important;{% endif %}">{{forloop.counter}}</td>
+                                    <td style="text-align:left;{% if sale.is_edited %}background-color:#c0dfdf !important;{% endif %}{% if sale.is_repeated_customer %}background-color:#FF0000 !important; color: FFFFFF !important;{% endif %}">{{sale.customer.custom_id}}</td>
+                                    <td style="text-align:left;{% if sale.is_edited %}background-color:#c0dfdf !important;{% endif %}{% if sale.is_repeated_customer %}background-color:#FF0000 !important; color: FFFFFF !important;{% endif %}">{{sale.customer.customer_name}}</td>
                                     {% comment %} <td style="text-align:center;{% if sale.is_edited %}background-color:#c0dfdf !important;{% endif %}" >{{van_product_stock.sold_count}}</td>
                                     <td style="text-align:center;{% if sale.is_edited %}background-color:#c0dfdf !important;{% endif %}" >{{van_product_stock.foc}}</td> {% endcomment %}
                                     <td style="text-align:center;{% if sale.is_edited %}background-color:#c0dfdf !important;{% endif %}" >{{sale.get_total_supply_qty}}</td>
@@ -413,9 +451,9 @@
                                 {% endif %}
                                 {% for sale in recharge_cash_sales %}
                                 <tr>
-                                    <td style="text-align:center;background-color:#ff9a44 !important;">{{forloop.counter}}</td>
-                                    <td style="background-color:#ff9a44 !important;">{{sale.customer.customer_name}}</td>
-                                    <td style="background-color:#ff9a44 !important;">{{sale.customer.custom_id}}</td>
+                                    <td style="text-align:center;{% if sale.is_edited %}background-color:#c0dfdf !important;{% endif %}{% if sale.is_repeated_customer %}background-color:#FF0000 !important; color: FFFFFF !important;{% endif %}">{{forloop.counter}}</td>
+                                    <td style="text-align:left;{% if sale.is_edited %}background-color:#c0dfdf !important;{% endif %}{% if sale.is_repeated_customer %}background-color:#FF0000 !important; color: FFFFFF !important;{% endif %}">{{sale.customer.custom_id}}</td>
+                                    <td style="text-align:left;{% if sale.is_edited %}background-color:#c0dfdf !important;{% endif %}{% if sale.is_repeated_customer %}background-color:#FF0000 !important; color: FFFFFF !important;{% endif %}">{{sale.customer.customer_name}}</td>
                                     <td style="text-align:center;background-color:#ff9a44 !important;">1</td>
                                     <td style="text-align:center;background-color:#ff9a44 !important;">{{sale.display_coupon_rates}}</td>
                                     {% comment %} <td style="text-align:center;">0</td> {% endcomment %}
@@ -441,9 +479,9 @@
                                 {% endif %}
                                 {% for sale in other_cash_sales %}
                                 <tr>
-                                    <td style="text-align:center;{% if sale.is_edited %}background-color:#c0dfdf !important;{% endif %}">{{forloop.counter}}</td>
-                                    <td style="text-align:left;{% if sale.is_edited %}background-color:#c0dfdf !important;{% endif %}">{{sale.customer.customer_name}}</td>
-                                    <td style="text-align:left;{% if sale.is_edited %}background-color:#c0dfdf !important;{% endif %}">{{sale.customer.custom_id}}</td>
+                                    <td style="text-align:center;{% if sale.is_edited %}background-color:#c0dfdf !important;{% endif %}{% if sale.is_repeated_customer %}background-color:#FF0000 !important; color: FFFFFF !important;{% endif %}">{{forloop.counter}}</td>
+                                    <td style="text-align:left;{% if sale.is_edited %}background-color:#c0dfdf !important;{% endif %}{% if sale.is_repeated_customer %}background-color:#FF0000 !important; color: FFFFFF !important;{% endif %}">{{sale.customer.custom_id}}</td>
+                                    <td style="text-align:left;{% if sale.is_edited %}background-color:#c0dfdf !important;{% endif %}{% if sale.is_repeated_customer %}background-color:#FF0000 !important; color: FFFFFF !important;{% endif %}">{{sale.customer.customer_name}}</td>
                                     <td style="text-align:center;{% if sale.is_edited %}background-color:#c0dfdf !important;{% endif %}" >{{sale.get_total_supply_qty}}</td>
                                     <td style="text-align:center;{% if sale.is_edited %}background-color:#c0dfdf !important;{% endif %}">{{sale.customer.get_rate}}</td>
                                     {% comment %} <td style="text-align:center;{% if sale.is_edited %}background-color:#c0dfdf !important;{% endif %}">{{sale.vat}}</td> {% endcomment %}
@@ -482,8 +520,8 @@
                                 </tr>
                                 <tr>
                                     <th style="text-align:center;">Sl No</th>
-                                    <th style="text-align:left;" scope="col">Customer Name</th>
                                     <th style="text-align:left;" scope="col">Customer Code</th>
+                                    <th style="text-align:left;" scope="col">Customer Name</th>
                                     <th style="text-align:center;" scope="col">Total QTY</th>
                                     <th style="text-align:center;" scope="col">Rate</th>
                                     {% comment %} <th style="text-align:center;" scope="col">Vat</th> {% endcomment %}
@@ -497,9 +535,9 @@
                                 </tr>
                                 {% for sale in five_gallon_credit_sales %}
                                 <tr>
-                                    <td style="text-align:center;{% if sale.is_edited %}background-color:#c0dfdf !important;{% endif %}">{{forloop.counter}}</td>
-                                    <td style="text-align:left;{% if sale.is_edited %}background-color:#c0dfdf !important;{% endif %}">{{sale.customer.customer_name}}</td>
-                                    <td style="text-align:left;{% if sale.is_edited %}background-color:#c0dfdf !important;{% endif %}">{{sale.customer.custom_id}}</td>
+                                    <td style="text-align:center;{% if sale.is_edited %}background-color:#c0dfdf !important;{% endif %}{% if sale.is_repeated_customer %}background-color:#FF0000 !important; color: FFFFFF !important;{% endif %}">{{forloop.counter}}</td>
+                                    <td style="text-align:left;{% if sale.is_edited %}background-color:#c0dfdf !important;{% endif %}{% if sale.is_repeated_customer %}background-color:#FF0000 !important; color: FFFFFF !important;{% endif %}">{{sale.customer.custom_id}}</td>
+                                    <td style="text-align:left;{% if sale.is_edited %}background-color:#c0dfdf !important;{% endif %}{% if sale.is_repeated_customer %}background-color:#FF0000 !important; color: FFFFFF !important;{% endif %}">{{sale.customer.customer_name}}</td>
                                     <td style="text-align:center;{% if sale.is_edited %}background-color:#c0dfdf !important;{% endif %}" >{{sale.get_total_supply_qty}}</td>
                                     <td style="text-align:center;{% if sale.is_edited %}background-color:#c0dfdf !important;{% endif %}">{{sale.get_rate}}</td>
                                     {% comment %} <td style="text-align:center;{% if sale.is_edited %}background-color:#c0dfdf !important;{% endif %}">{{sale.vat}}</td> {% endcomment %}
@@ -525,9 +563,9 @@
                                 {% endif %}
                                 {% for sale in recharge_credit_sales %}
                                 <tr>
-                                    <td style="text-align:center;background-color:#ff9a44 !important;">{{forloop.counter}}</td>
-                                    <td style="background-color:#ff9a44 !important;">{{sale.customer.customer_name}}</td>
-                                    <td style="background-color:#ff9a44 !important;">{{sale.customer.custom_id}}</td>
+                                    <td style="text-align:center;{% if sale.is_edited %}background-color:#c0dfdf !important;{% endif %}{% if sale.is_repeated_customer %}background-color:#FF0000 !important; color: FFFFFF !important;{% endif %}">{{forloop.counter}}</td>
+                                    <td style="text-align:left;{% if sale.is_edited %}background-color:#c0dfdf !important;{% endif %}{% if sale.is_repeated_customer %}background-color:#FF0000 !important; color: FFFFFF !important;{% endif %}">{{sale.customer.custom_id}}</td>
+                                    <td style="text-align:left;{% if sale.is_edited %}background-color:#c0dfdf !important;{% endif %}{% if sale.is_repeated_customer %}background-color:#FF0000 !important; color: FFFFFF !important;{% endif %}">{{sale.customer.customer_name}}</td>
                                     <td style="text-align:center;background-color:#ff9a44 !important;">1</td>
                                     <td style="text-align:center;background-color:#ff9a44 !important;">{{sale.display_coupon_rates}}</td>
                                     {% comment %} <td style="text-align:center;">0</td> {% endcomment %}
@@ -553,9 +591,9 @@
                                 {% endif %}
                                 {% for sale in other_credit_sales %}
                                 <tr>
-                                    <td style="text-align:center;{% if sale.is_edited %}background-color:#c0dfdf !important;{% endif %}">{{forloop.counter}}</td>
-                                    <td style="text-align:left;{% if sale.is_edited %}background-color:#c0dfdf !important;{% endif %}">{{sale.customer.customer_name}}</td>
-                                    <td style="text-align:left;{% if sale.is_edited %}background-color:#c0dfdf !important;{% endif %}">{{sale.customer.custom_id}}</td>
+                                    <td style="text-align:center;{% if sale.is_edited %}background-color:#c0dfdf !important;{% endif %}{% if sale.is_repeated_customer %}background-color:#FF0000 !important; color: FFFFFF !important;{% endif %}">{{forloop.counter}}</td>
+                                    <td style="text-align:left;{% if sale.is_edited %}background-color:#c0dfdf !important;{% endif %}{% if sale.is_repeated_customer %}background-color:#FF0000 !important; color: FFFFFF !important;{% endif %}">{{sale.customer.custom_id}}</td>
+                                    <td style="text-align:left;{% if sale.is_edited %}background-color:#c0dfdf !important;{% endif %}{% if sale.is_repeated_customer %}background-color:#FF0000 !important; color: FFFFFF !important;{% endif %}">{{sale.customer.customer_name}}</td>
                                     <td style="text-align:center;{% if sale.is_edited %}background-color:#c0dfdf !important;{% endif %}" >{{sale.get_total_supply_qty}}</td>
                                     <td style="text-align:center;{% if sale.is_edited %}background-color:#c0dfdf !important;{% endif %}">{{sale.customer.get_rate}}</td>
                                     {% comment %} <td style="text-align:center;{% if sale.is_edited %}background-color:#c0dfdf !important;{% endif %}">{{sale.vat}}</td> {% endcomment %}
@@ -594,23 +632,28 @@
                                 </tr>
                                 <tr>
                                     <th style="text-align:center;">Sl No</th>
-                                    <th style="text-align:left;" scope="col">Customer Name</th>
                                     <th style="text-align:left;" scope="col">Customer Code</th>
+                                    <th style="text-align:left;" scope="col">Customer Name</th>
                                     <th style="text-align:center;" scope="col">Total QTY</th>
                                     <th style="text-align:center;" scope="col">Rate</th>
                                     <th style="text-align:center;" scope="col">Manual Coupon Recieved</th>
                                     <th style="text-align:center;" scope="col">Digital Coupon Recieved</th>
+                                    <th style="text-align:center;" scope="col">Outstanding Manual Coupons</th>
+                                    <th style="text-align:center;" scope="col">Outstanding Digital Coupons</th>
                                     
                                 </tr>
                                 {% for sale in coupon_sales %}
                                 <tr>
-                                    <td style="text-align:center;{% if sale.is_edited %}background-color:#c0dfdf !important;{% endif %}">{{forloop.counter}}</td>
-                                    <td style="text-align:left;{% if sale.is_edited %}background-color:#c0dfdf !important;{% endif %}">{{sale.customer.customer_name}}</td>
-                                    <td style="text-align:left;{% if sale.is_edited %}background-color:#c0dfdf !important;{% endif %}">{{sale.customer.custom_id}}</td>
+                                    <td style="text-align:center;{% if sale.is_edited %}background-color:#c0dfdf !important;{% endif %}{% if sale.is_repeated_customer %}background-color:#FF0000 !important; color: FFFFFF !important;{% endif %}">{{forloop.counter}}</td>
+                                    <td style="text-align:left;{% if sale.is_edited %}background-color:#c0dfdf !important;{% endif %}{% if sale.is_repeated_customer %}background-color:#FF0000 !important; color: FFFFFF !important;{% endif %}">{{sale.customer.custom_id}}</td>
+                                    <td style="text-align:left;{% if sale.is_edited %}background-color:#c0dfdf !important;{% endif %}{% if sale.is_repeated_customer %}background-color:#FF0000 !important; color: FFFFFF !important;{% endif %}">{{sale.customer.customer_name}}</td>
                                     <td style="text-align:center;{% if sale.is_edited %}background-color:#c0dfdf !important;{% endif %}">{{sale.get_total_supply_qty}}</td>
                                     <td style="text-align:center;{% if sale.is_edited %}background-color:#c0dfdf !important;{% endif %}">{{sale.get_rate}}</td>
                                     <td style="text-align:center;{% if sale.is_edited %}background-color:#c0dfdf !important;{% endif %}">{{sale.total_coupon_recieved.manual_coupon}}</td>
                                     <td style="text-align:center;{% if sale.is_edited %}background-color:#c0dfdf !important;{% endif %}">{{sale.total_coupon_recieved.digital_coupon}}</td>
+                                    <td style="text-align:center;{% if sale.is_edited %}background-color:#c0dfdf !important;{% endif %}">{{sale.outstanding_manual_coupons}}</td>
+                                    <td style="text-align:center;{% if sale.is_edited %}background-color:#c0dfdf !important;{% endif %}">{{sale.outstanding_digital_coupons}}</td>
+
                                 </tr>
                                 {% endfor %} 
                                 <tr>
@@ -619,6 +662,8 @@
                                     <td style="text-align:center;font-weight: bold;">-</td>
                                     <td style="text-align:center;font-weight: bold;">{{ manual_coupon_total }}</td>
                                     <td style="text-align:center;font-weight: bold;">{{ digital_coupon_total }}</td>
+                                    <td style="text-align:center; font-weight: bold;">{{ total_outstandaing_manual_coupons }}</td>
+                                    <td style="text-align:center; font-weight: bold;">{{ total_outstandaing_digital_coupons }}</td>
                                 </tr>
                             </table>
                         </div>
@@ -705,9 +750,9 @@
                                 <tbody>
                                     {% for instance in dialy_collections %}
                                     <tr>
-                                        <td style="text-align:center;">{{ forloop.counter }}</td>
-                                        <td>{{ instance.customer.custom_id }}</td>
-                                        <td>{{ instance.customer.customer_name }}</td>
+                                        <td style="text-align:center;{% if instance.is_repeated_customer %}background-color:#FF0000 !important; color: FFFFFF !important;{% endif %}">{{ forloop.counter }}</td>
+                                        <td style="{% if instance.is_repeated_customer %}background-color:#FF0000 !important; color: FFFFFF !important;{% endif %}">{{ instance.customer.custom_id }}</td>
+                                        <td style="{% if instance.is_repeated_customer %}background-color:#FF0000 !important; color: FFFFFF !important;{% endif %}">{{ instance.customer.customer_name }}</td>
                                         <td>{{ instance.customer.building_name }} {% if instance.customer.door_house_no %} / {{ instance.customer.door_house_no }} {% endif %}</td>
                                         <td style="text-align:center;">{{ instance.customer.customer_type }}</td>
                                         <td style="text-align:center;">{{ instance.amount_received }}</td>
