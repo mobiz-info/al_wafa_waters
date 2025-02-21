@@ -651,7 +651,7 @@ class NewRequestHome(View):
             else:
                 initial_data['assign_this_to'] = None  # Default to None if no salesman is assigned
             form = self.form_class(initial=initial_data)
-            print("customer.sales_staff", customer.sales_staff)
+            # print("customer.sales_staff", customer.sales_staff)
             form = self.form_class(initial=initial_data)
 
             context = {
@@ -725,8 +725,8 @@ class NewRequestHome(View):
                     sales_man = customer.sales_staff
                     try:
                         salesman_body = f'A new request has been created. for {customer.customer_name}'
-                        notification(sales_man.pk, "New Water Request", salesman_body, "sanawater")
-                        notification(customer.user_id.pk, "New Water Request", "Your Request Created Succesfull.", "sanawater")
+                        notification(sales_man.pk, "New Water Request", salesman_body, "al-wafa")
+                        notification(customer.user_id.pk, "New Water Request", "Your Request Created Succesfull.", "al-wafa")
                     except CustomUser.DoesNotExist:
                         messages.error(request, 'Salesman does not exist.', 'alert-danger')
                     except Send_Notification.DoesNotExist:

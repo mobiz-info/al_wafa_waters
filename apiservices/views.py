@@ -4,6 +4,7 @@ import base64
 import datetime
 from datetime import datetime, date, time
 from datetime import timedelta
+from calendar import monthrange
 
 from django.shortcuts import render
 from django.contrib.auth.decorators import login_required
@@ -27,6 +28,7 @@ from django.db.models import Sum, Value, DecimalField, Min
 from django.contrib.auth.hashers import make_password, check_password
 ######rest framwework section
 
+from apiservices.notification import notification
 from client_management.views import handle_coupons, handle_empty_bottle_outstanding, handle_invoice_deletion, handle_outstanding_amounts, handle_outstanding_coupon, update_van_product_stock
 from rest_framework import status
 from rest_framework.views import APIView
@@ -7268,11 +7270,9 @@ class CustomerCartAPIView(APIView):
         customer = Customers.objects.get(user_id=request.user)
         cart_data = request.data
 
-        # Pass the entire request data to the CustomerCartPostSerializer
         cart_serializer = CustomerCartPostSerializer(data=cart_data)
 
         if cart_serializer.is_valid():
-            # Check if there is an existing cart with order_status=False
             if (cart_instances := CustomerCart.objects.filter(customer__user_id=request.user, order_status=False)).exists():
                 cart_instance = cart_instances.latest('-created_date')
             else:
@@ -7281,46 +7281,42 @@ class CustomerCartAPIView(APIView):
                     created_by=customer.pk,
                     created_date=datetime.today()
                 )
-            
-            # Process the single item in the request
-            item_data = cart_data['items']
-            product_id = item_data['product']
 
-            # If the product is not already in the cart, proceed to add it
-            cart_item_serializer = CustomerCartItemsPostSerializer(data=item_data)
+            # Ensure items is a list
+            item_data = cart_data.get('items', [])
+            if not isinstance(item_data, list):
+                item_data = [item_data]  # Convert to list if it's a single item
 
-            if cart_item_serializer.is_valid():
-                cart_item_instance = cart_item_serializer.save(
-                    customer_cart=cart_instance
-                )
-                
-                # Calculate total amount for the item and update grand total
-                cart_item_instance.total_amount = cart_item_instance.quantity * cart_item_instance.price
-                cart_item_instance.save()
+            for item in item_data:
+                cart_item_serializer = CustomerCartItemsPostSerializer(data=item)
+                if cart_item_serializer.is_valid():
+                    cart_item_instance = cart_item_serializer.save(
+                        customer_cart=cart_instance
+                        )
+                    cart_item_instance.price = cart_item_instance.price / cart_item_instance.quantity
+                    cart_item_instance.total_amount = cart_item_instance.quantity * cart_item_instance.price
+                    cart_item_instance.save()
 
-                cart_instance.grand_total += cart_item_instance.total_amount
-                cart_instance.save()
+                    cart_instance.grand_total += cart_item_instance.total_amount
+                    cart_instance.save()
+                else:
+                    return Response({
+                        "statusCode": status.HTTP_400_BAD_REQUEST,
+                        "title": "Item Data Error",
+                        "message": cart_item_serializer.errors,
+                    }, status=status.HTTP_400_BAD_REQUEST)
 
-                response_data = {
-                    "statusCode": status.HTTP_201_CREATED,
-                    "data": cart_serializer.data,
-                    "message": "Successfully added",
-                }
-                return Response(response_data, status=status.HTTP_201_CREATED)
-            else:
-                response_data = {
-                    "statusCode": status.HTTP_400_BAD_REQUEST,
-                    "title": "Item Data Error",
-                    "message": cart_item_serializer.errors,
-                }
-                return Response(response_data, status=status.HTTP_400_BAD_REQUEST)
-        else:
-            response_data = {
-                "statusCode": status.HTTP_400_BAD_REQUEST,
-                "title": "Cart Data Error",
-                "message": cart_serializer.errors,
-            }
-            return Response(response_data, status=status.HTTP_400_BAD_REQUEST)
+            return Response({
+                "statusCode": status.HTTP_201_CREATED,
+                "data": cart_serializer.data,
+                "message": "Successfully added",
+            }, status=status.HTTP_201_CREATED)
+
+        return Response({
+            "statusCode": status.HTTP_400_BAD_REQUEST,
+            "title": "Cart Data Error",
+            "message": cart_serializer.errors,
+        }, status=status.HTTP_400_BAD_REQUEST)
     
     def put(self, request, *args, **kwargs):
         item_pk = request.data.get("item_pk")
@@ -7435,12 +7431,37 @@ class CustomerOrdersAPIView(APIView):
                 customer_order_instance.grand_total += customer_order_item_instance.total_amount
                 customer_order_instance.save()
                 
+                DiffBottlesModel.objects.create(
+                    product_item=cart_item.product,
+                    quantity_required=cart_item.quantity,
+                    delivery_date=customer_cart.delivery_date,
+                    assign_this_to=customer.sales_staff,
+                    mode="paid",
+                    amount=customer_cart.grand_total,
+                    discount_net_total=customer_cart.grand_total,
+                    created_by=request.user.id,
+                    created_date=datetime.today(),
+                    customer=customer,
+                )
+                
+                customer_cart.grand_total -= cart_item.price
+                customer_cart.save()
+                
+                cart_item.total_amount -= cart_item.price
+                cart_item.save()
+                cart_item.delete() 
+                
+                salesman_body = f'A new request has been created. for {customer.customer_name}'
+                notification(customer.sales_staff.pk, "New Water Request", salesman_body, "al-wafa")
+                notification(customer.user_id.pk, "New Water Request", "Your Request Created Succesfull.", "al-wafa")
+            
             customer_cart.order_status = True
             customer_cart.save()
                 
             customer_cart.order_status = True
             customer_cart.save()
-                
+            
+            
             response_data = {
                 "statusCode": status.HTTP_201_CREATED,
                 "title" : "successfull",
@@ -9425,9 +9446,6 @@ class VanOnloadAPIView(APIView):
                             )
                             emptycan.save()
                             
-                            van_stock_instance.empty_can_count -= van_stock_instance.empty_can_count
-                            van_stock_instance.save()
-                            
                             # damage bottle offload
                             if van_stock_instance.damage_count == int(damage_count):
                                 van_stock_instance.damage_count -= int(damage_count)
@@ -9442,7 +9460,7 @@ class VanOnloadAPIView(APIView):
                                         van=van_instance,
                                         quantity=int(damage_count),
                                         created_by=request.user.id,
-                                        created_date=datetime.now(),
+                                        created_date=order_item.staff_order_id.created_date,
                                     )
                                     
                                 if int(leak_count) > 0:
@@ -9452,14 +9470,14 @@ class VanOnloadAPIView(APIView):
                                         van=van_instance,
                                         quantity=int(leak_count),
                                         created_by=request.user.id,
-                                        created_date=datetime.now(),
+                                        created_date=order_item.staff_order_id.created_date,
                                     )
                                 
                                 DamageBottleStock.objects.create(
                                     product=product_item_instance,
                                     quantity=int(damage_count) + int(leak_count),
                                     created_by=van_instance.salesman.pk,
-                                    created_date=datetime.today(),
+                                    created_date=order_item.staff_order_id.created_date,
                                 )
                                 
                                 if not ScrapProductStock.objects.filter(created_date__date=order_item.staff_order_id.created_date.date(),product=product_item_instance).exists():
@@ -9485,11 +9503,11 @@ class VanOnloadAPIView(APIView):
                                         van=van_instance,
                                         quantity=int(service_count),
                                         created_by=request.user.id,
-                                        created_date=datetime.now(),
+                                        created_date=order_item.staff_order_id.created_date,
                                     )
                                 
                                 if not WashingProductStock.objects.filter(created_date__date=order_item.staff_order_id.created_date.date(),product=product_item_instance).exists():
-                                    washing_instance=WashingProductStock.objects.create(created_by=request.user.id,created_date=datetime.today(),product=product_item_instance)
+                                    washing_instance=WashingProductStock.objects.create(created_by=request.user.id,created_date=order_item.staff_order_id.created_date,product=product_item_instance)
                                 else:
                                     washing_instance=WashingProductStock.objects.get(created_date__date=order_item.staff_order_id.created_date.date(),product=product_item_instance)
                                 washing_instance.quantity = service_count
@@ -9498,10 +9516,9 @@ class VanOnloadAPIView(APIView):
                                 washing_stock, washing_create = WashingStock.objects.get_or_create(
                                     product=product_item_instance
                                     )
-
                                 washing_stock.quantity += service_count
                                 washing_stock.save()
-                            
+                                
                             Offload.objects.create(
                                 created_by=request.user.id,
                                 created_date=datetime.today(),
@@ -9510,8 +9527,11 @@ class VanOnloadAPIView(APIView):
                                 product=product_item_instance,
                                 quantity=van_stock_instance.empty_can_count,
                                 stock_type="emptycan",
-                                offloaded_date=datetime.today().date(),
+                                offloaded_date=order_item.staff_order_id.created_date.date(),
                             )
+                            
+                            van_stock_instance.empty_can_count -= van_stock_instance.empty_can_count
+                            van_stock_instance.save()
                             
                             order_varified = OrderVerifiedSupervisor.objects.create(
                                 order=order_item.staff_order_id,
@@ -9707,7 +9727,7 @@ class VanOnloadProductionAPIView(APIView):
                         fresh_count = int(request.data.get("fresh_count"))
                         
                         # Get the van's current stock of the product
-                        quantity_issued = varified_product_details.issued_qty + used_count + fresh_count
+                        quantity_issued = varified_product_details.issued_qty
                         
                         if int(quantity_issued) != 0 and van_instance.bottle_count > int(quantity_issued) + van_stock_instance.stock:
                             van_limit = True
@@ -10984,74 +11004,56 @@ class SalesInvoicesAPIView(APIView):
     parser_classes = [JSONParser]
 
     def get(self, request):
-        data = request.data
+        data = request.data  
         start_date = data.get('start_date')
         end_date = data.get('end_date')
         sales_type = data.get('invoice_types')  
         route_name = data.get('route_id') 
 
-
-        if not start_date:
-            start_date = datetime.today().date()
-        else:
+        if start_date:
             start_date = datetime.strptime(start_date, '%Y-%m-%d').date()
-
-        if not end_date:
-            end_date = datetime.today().date()
         else:
-            end_date = datetime.strptime(end_date, '%Y-%m-%d').date()
+            start_date = datetime.today().date()
 
-        # Check if the user is a salesman
+        if end_date:
+            end_date = datetime.strptime(end_date, '%Y-%m-%d').date()
+        else:
+            end_date = datetime.today().date()
+
         try:
             route = Van_Routes.objects.get(van__salesman=request.user).routes
             is_salesman = True
         except Van_Routes.DoesNotExist:
             route = None
             is_salesman = False
+        
+        sales_filter = {
+            "created_date__date__gte": start_date,
+            "created_date__date__lte": end_date,
+        }
 
         if is_salesman:
-            log_activity(request.user, f"User is a salesman. Using assigned route: {route}.")
-            sales_filter = {
-                "created_date__date__gte": start_date,
-                "created_date__date__lte": end_date,
-                "customer__routes": route
-            }
+            sales_filter["customer__routes"] = route
         else:
-            if route_name:  # Owner provides a specific route
-                log_activity(request.user, f"User is an owner. Filtering by provided route: {route_name}.")
-                sales_filter = {
-                    "created_date__date__gte": start_date,
-                    "created_date__date__lte": end_date,
-                    "customer__routes": route_name  # Filter by given route
-                }
-            else:  # No route provided, filter by all routes
+            if route_name:  
+                sales_filter["customer__routes"] = route_name
+            else:  
                 all_routes = Van_Routes.objects.values_list("routes", flat=True)
-                log_activity(request.user, "User is an owner. Filtering by all available routes.")
-                sales_filter = {
-                    "created_date__date__gte": start_date,
-                    "created_date__date__lte": end_date,
-                    "customer__routes__in": all_routes
-                }
+                sales_filter["customer__routes__in"] = all_routes
 
-
-        # Filtering Sales Data
         if sales_type == "cash_invoice":
             sales = CustomerSupply.objects.filter(
                 Q(amount_recieved__gt=0) | Q(customer__sales_type="FOC"),
                 **sales_filter
             )
-            log_activity(request.user, "Filtered for cash invoices.")
-        elif sales_type == "credit_invoice":
+        elif sales_type == "credit_invoive":
             sales = CustomerSupply.objects.filter(
                 amount_recieved__lte=0,
                 **sales_filter
             ).exclude(customer__sales_type="FOC")
-            log_activity(request.user, "Filtered for credit invoices.")
         else:
             sales = CustomerSupply.objects.filter(**sales_filter)
-            log_activity(request.user, "Filtered for all invoice types.")
 
-        # Aggregating Sales Data
         total_sales = sales.aggregate(
             total_grand_total=Sum('grand_total'),
             total_vat=Sum('vat'),
@@ -11059,13 +11061,12 @@ class SalesInvoicesAPIView(APIView):
             total_amount_received=Sum('amount_recieved')
         )
 
-        total_amount = round(total_sales["total_grand_total"] or 0, 2)
-        total_vat = round(total_sales["total_vat"] or 0, 2)
-        total_taxable = round(total_sales["total_net_payable"] or 0, 2)
-        total_amount_collected = round(total_sales["total_amount_received"] or 0, 2)
+        total_amount = round(total_sales.get("total_grand_total") or 0, 2)
+        total_vat = round(total_sales.get("total_vat") or 0, 2)
+        total_taxable = round(total_sales.get("total_net_payable") or 0, 2)
+        total_amount_collected = round(total_sales.get("total_amount_received") or 0, 2)
 
         sales_serializer = SalesReportSerializer(sales, many=True)
-        log_activity(request.user, f"Sales report retrieved successfully with {len(sales)} records.")
 
         response_data = {
             "StatusCode": 200,
@@ -11079,8 +11080,8 @@ class SalesInvoicesAPIView(APIView):
                 "filters": {
                     "route_name": str(route) if route else "All Routes",
                     "invoice_types": sales_type if sales_type else "All", 
-                    "start_date": start_date,
-                    "end_date": end_date,
+                    "start_date": str(start_date),
+                    "end_date": str(end_date),
                 }
             },
         }
@@ -11846,6 +11847,7 @@ class CustomerRequestTypeAPIView(APIView):
         Handle GET requests to fetch all records or a specific record if ID is provided.
         """
         if id:
+            
             try:
                 customer_request_type = CustomerRequestType.objects.get(id=id)
                 serializer = CustomerRequestTypeSerializer(customer_request_type)
@@ -11971,122 +11973,7 @@ class UpdateCustomerRequestStatusView(APIView):
 
 #         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
     
-class OverviewAPIView(APIView):
-    authentication_classes = [BasicAuthentication]
-    permission_classes = [IsAuthenticated]
 
-    def get(self, request, *args, **kwargs):
-        user = request.user  # Get the logged-in user
-        print("user",user)
-
-        # Ensure only "owner" user type can access
-        if user.user_type != 'owner' and (not user.designation_id or user.designation_id.designation_name.lower() != "owner"):
-            return Response({"detail": "You do not have permission to access this resource."}, status=status.HTTP_403_FORBIDDEN)
-        # Get the date from the request or use today's date
-        date_str = request.GET.get('date')
-        if date_str:
-            date = datetime.strptime(date_str, '%Y-%m-%d').date()
-        else:
-            date = datetime.today().date()
-
-        yesterday_date = date - timedelta(days=1)
-
-        # Calculate supply and recharge statistics
-        todays_supply_instances = CustomerSupply.objects.filter(created_date__date=date)
-        supply_cash_sales_instances = todays_supply_instances.filter(amount_recieved__gt=0).exclude(customer__sales_type="CASH COUPON")
-        supply_credit_sales_instances = todays_supply_instances.filter(amount_recieved__lte=0).exclude(customer__sales_type__in=["FOC", "CASH COUPON"])
-        
-        todays_recharge_instances = CustomerCoupon.objects.filter(created_date__date=date)
-        recharge_cash_sales_instances = todays_recharge_instances.filter(amount_recieved__gt=0)
-        recharge_credit_sales_instances = todays_recharge_instances.filter(amount_recieved__lte=0)
-        
-        total_cash_sales_count = supply_cash_sales_instances.count() + recharge_cash_sales_instances.count()
-        total_credit_sales_count = supply_credit_sales_instances.count() + recharge_credit_sales_instances.count()
-        
-        total_supply_cash_sales = supply_cash_sales_instances.aggregate(total_amount_recieved=Sum('amount_recieved'))['total_amount_recieved'] or 0
-        total_recharge_cash_sales = recharge_cash_sales_instances.aggregate(total_amount_recieved=Sum('amount_recieved'))['total_amount_recieved'] or 0
-        total_today_collections = total_supply_cash_sales + total_recharge_cash_sales
-
-        # Old collections
-        old_payment_collections_instances = CollectionPayment.objects.filter(created_date__date=date)
-        total_old_payment_collections = old_payment_collections_instances.aggregate(total_amount_recieved=Sum('amount_received'))['total_amount_recieved'] or 0
-
-        # Expenses
-        expenses_instances = Expense.objects.filter(expense_date=date)
-        total_expenses = expenses_instances.aggregate(total_expense=Sum('amount'))['total_expense'] or 0
-
-        # Active vans
-        active_vans_ids = VanProductStock.objects.filter(stock__gt=0).values_list('van__pk', flat=True).distinct()
-        active_van_count = Van.objects.filter(pk__in=active_vans_ids).count()
-
-        # Customer data
-        customers_instances = Customers.objects.all()
-        vocation_customers_instances = Vacation.objects.all()
-        route_instances = RouteMaster.objects.all()
-        
-        todays_customers = []
-        yesterday_customers = []
-
-        for route in route_instances:
-            day_of_week = date.strftime('%A')
-            week_num = (date.day - 1) // 7 + 1
-            week_number = f'Week{week_num}'
-            today_vocation_customer_ids = vocation_customers_instances.filter(start_date__gte=date, end_date__lte=date).values_list('customer__pk', flat=True)
-            today_scheduled_customers = customers_instances.filter(routes=route, is_calling_customer=False).exclude(pk__in=today_vocation_customer_ids)
-
-            for customer in today_scheduled_customers:
-                if customer.visit_schedule:
-                    for day, weeks in customer.visit_schedule.items():
-                        if str(day_of_week) == str(day) and str(week_number) in weeks:
-                            todays_customers.append(customer)
-
-            y_day_of_week = yesterday_date.strftime('%A')
-            y_week_num = (yesterday_date.day - 1) // 7 + 1
-            y_week_number = f'Week{y_week_num}'
-            yesterday_vocation_customer_ids = vocation_customers_instances.filter(start_date__gte=yesterday_date, end_date__lte=yesterday_date).values_list('customer__pk', flat=True)
-            yesterday_scheduled_customers = customers_instances.filter(routes=route, is_calling_customer=False).exclude(pk__in=yesterday_vocation_customer_ids)
-
-            for customer in yesterday_scheduled_customers:
-                if customer.visit_schedule:
-                    for day, weeks in customer.visit_schedule.items():
-                        if str(y_day_of_week) == str(day) and str(y_week_number) in weeks:
-                            yesterday_customers.append(customer)
-
-        door_lock_count = NonvisitReport.objects.filter(created_date__date=date, reason__reason_text="Door Lock").count()
-        emergency_customers_count = customers_instances.filter(pk__in=DiffBottlesModel.objects.filter(delivery_date=date).values_list('customer__pk')).count()
-
-        new_customers_count_with_salesman = Customers.objects.filter(created_date__date=date).values('sales_staff__username').annotate(customer_count=Count('customer_id')).order_by('sales_staff__username')
-
-        data = {
-            "cash_sales": total_cash_sales_count,
-            "credit_sales": total_credit_sales_count,
-            "total_sales_count": total_cash_sales_count + total_credit_sales_count,
-            "today_expenses": total_expenses,
-            "total_today_collections": total_today_collections,
-            "total_old_payment_collections": total_old_payment_collections,
-            "total_collection": total_today_collections + total_old_payment_collections,
-            "total_cash_in_hand": total_today_collections + total_old_payment_collections - total_expenses,
-            "active_van_count": active_van_count,
-            "delivery_progress": f'{supply_cash_sales_instances.count() + supply_credit_sales_instances.count()} / {len(todays_customers)}',
-            "total_customers_count": customers_instances.count(),
-            "new_customers_count": customers_instances.filter(created_date__date=date).count(),
-            "door_lock_count": door_lock_count,
-            "emergency_customers_count": emergency_customers_count,
-            "total_vocation_customers_count": len(vocation_customers_instances.filter(start_date__gte=date, end_date__lte=date).values_list('customer__pk').distinct()),
-            "yesterday_missed_customers_count": len(yesterday_customers) - CustomerSupply.objects.filter(created_date__date=yesterday_date).count(),
-            "new_customers_count_with_salesman": [
-                {
-                    "salesman_names": item['sales_staff__username'] if item['sales_staff__username'] else "Unassigned",
-                    "customer_count": item['customer_count']
-                }
-                for item in new_customers_count_with_salesman
-            ],
-        }
-
-        serializer = Overview_Dashboard_Summary(data)
-        return Response(serializer.data)
-    
-    
 class SalesmanCustomerRequestTypeAPIView(APIView):
     
     def get(self, request, id=None):
@@ -12191,7 +12078,17 @@ class UpdateSalesmanCustomerRequestStatusView(APIView):
 
         return Response({"message": "Request status updated successfully"}, status=status.HTTP_200_OK)
     
-    
+class AllSalesmanCustomerRequestListAPIView(APIView):
+    # permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+        queryset = SalesmanCustomerRequests.objects.all().order_by('-created_date')
+
+        if not queryset.exists():
+            return Response({"message": "No customer requests found"}, status=status.HTTP_200_OK)
+
+        serializer = SalesmanCustomerRequestSerializer(queryset, many=True)
+        return Response(serializer.data, status=status.HTTP_200_OK)    
 #---------------------Auditing-----------------
 from django.utils.timezone import now
    
@@ -12485,3 +12382,303 @@ class ScrapClearanceReportAPIView(APIView):
 
         serializer = ScrapClearanceReportSerializer(scrap_clearance_records.order_by('-created_date'), many=True)
         return Response(serializer.data, status=200)
+
+class OverviewAPIView(APIView):
+    authentication_classes = [BasicAuthentication]
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request, *args, **kwargs):
+        user = request.user  # Get the logged-in user
+        print("user",user)
+
+        # Ensure only "owner" user type can access
+        if user.user_type != 'owner' and (not user.designation_id or user.designation_id.designation_name.lower() != "owner"):
+            return Response({"detail": "You do not have permission to access this resource."}, status=status.HTTP_403_FORBIDDEN)
+        # Get the date from the request or use today's date
+        date_str = request.GET.get('date')
+        if date_str:
+            date = datetime.strptime(date_str, '%Y-%m-%d').date()
+        else:
+            date = datetime.today().date()
+
+        yesterday_date = date - timedelta(days=1)
+
+        # Calculate supply and recharge statistics
+        todays_supply_instances = CustomerSupply.objects.filter(created_date__date=date)
+        supply_cash_sales_instances = todays_supply_instances.filter(amount_recieved__gt=0).exclude(customer__sales_type="CASH COUPON")
+        supply_credit_sales_instances = todays_supply_instances.filter(amount_recieved__lte=0).exclude(customer__sales_type__in=["FOC", "CASH COUPON"])
+        
+        todays_recharge_instances = CustomerCoupon.objects.filter(created_date__date=date)
+        recharge_cash_sales_instances = todays_recharge_instances.filter(amount_recieved__gt=0)
+        recharge_credit_sales_instances = todays_recharge_instances.filter(amount_recieved__lte=0)
+        
+        total_cash_sales_count = supply_cash_sales_instances.count() + recharge_cash_sales_instances.count()
+        total_credit_sales_count = supply_credit_sales_instances.count() + recharge_credit_sales_instances.count()
+        
+        total_supply_cash_sales = supply_cash_sales_instances.aggregate(total_amount_recieved=Sum('amount_recieved'))['total_amount_recieved'] or 0
+        total_recharge_cash_sales = recharge_cash_sales_instances.aggregate(total_amount_recieved=Sum('amount_recieved'))['total_amount_recieved'] or 0
+        total_today_collections = total_supply_cash_sales + total_recharge_cash_sales
+
+        # Old collections
+        old_payment_collections_instances = CollectionPayment.objects.filter(created_date__date=date)
+        total_old_payment_collections = old_payment_collections_instances.aggregate(total_amount_recieved=Sum('amount_received'))['total_amount_recieved'] or 0
+
+        # Expenses
+        expenses_instances = Expense.objects.filter(expense_date=date)
+        total_expenses = expenses_instances.aggregate(total_expense=Sum('amount'))['total_expense'] or 0
+
+        # Active vans
+        active_vans_ids = VanProductStock.objects.filter(stock__gt=0).values_list('van__pk', flat=True).distinct()
+        active_van_count = Van.objects.filter(pk__in=active_vans_ids).count()
+
+        # Customer data
+        customers_instances = Customers.objects.all()
+        vocation_customers_instances = Vacation.objects.all()
+        route_instances = RouteMaster.objects.all()
+        
+        todays_customers = []
+        yesterday_customers = []
+
+        for route in route_instances:
+            day_of_week = date.strftime('%A')
+            week_num = (date.day - 1) // 7 + 1
+            week_number = f'Week{week_num}'
+            today_vocation_customer_ids = vocation_customers_instances.filter(start_date__gte=date, end_date__lte=date).values_list('customer__pk', flat=True)
+            today_scheduled_customers = customers_instances.filter(routes=route, is_calling_customer=False).exclude(pk__in=today_vocation_customer_ids)
+
+            for customer in today_scheduled_customers:
+                if customer.visit_schedule:
+                    for day, weeks in customer.visit_schedule.items():
+                        if str(day_of_week) == str(day) and str(week_number) in weeks:
+                            todays_customers.append(customer)
+
+            y_day_of_week = yesterday_date.strftime('%A')
+            y_week_num = (yesterday_date.day - 1) // 7 + 1
+            y_week_number = f'Week{y_week_num}'
+            yesterday_vocation_customer_ids = vocation_customers_instances.filter(start_date__gte=yesterday_date, end_date__lte=yesterday_date).values_list('customer__pk', flat=True)
+            yesterday_scheduled_customers = customers_instances.filter(routes=route, is_calling_customer=False).exclude(pk__in=yesterday_vocation_customer_ids)
+
+            for customer in yesterday_scheduled_customers:
+                if customer.visit_schedule:
+                    for day, weeks in customer.visit_schedule.items():
+                        if str(y_day_of_week) == str(day) and str(y_week_number) in weeks:
+                            yesterday_customers.append(customer)
+
+        door_lock_count = NonvisitReport.objects.filter(created_date__date=date, reason__reason_text="Door Lock").count()
+        emergency_customers_count = customers_instances.filter(pk__in=DiffBottlesModel.objects.filter(delivery_date=date).values_list('customer__pk')).count()
+
+        new_customers_count_with_salesman = Customers.objects.filter(created_date__date=date).values('sales_staff__username').annotate(customer_count=Count('customer_id')).order_by('sales_staff__username')
+
+        data = {
+            "cash_sales": total_cash_sales_count,
+            "credit_sales": total_credit_sales_count,
+            "total_sales_count": total_cash_sales_count + total_credit_sales_count,
+            "today_expenses": total_expenses,
+            "total_today_collections": total_today_collections,
+            "total_old_payment_collections": total_old_payment_collections,
+            "total_collection": total_today_collections + total_old_payment_collections,
+            "total_cash_in_hand": total_today_collections + total_old_payment_collections - total_expenses,
+            "active_van_count": active_van_count,
+            "delivery_progress": f'{supply_cash_sales_instances.count() + supply_credit_sales_instances.count()} / {len(todays_customers)}',
+            "total_customers_count": customers_instances.count(),
+            "new_customers_count": customers_instances.filter(created_date__date=date).count(),
+            "door_lock_count": door_lock_count,
+            "emergency_customers_count": emergency_customers_count,
+            "total_vocation_customers_count": len(vocation_customers_instances.filter(start_date__gte=date, end_date__lte=date).values_list('customer__pk').distinct()),
+            "yesterday_missed_customers_count": len(yesterday_customers) - CustomerSupply.objects.filter(created_date__date=yesterday_date).count(),
+            "new_customers_count_with_salesman": [
+                {
+                    "salesman_names": item['sales_staff__username'] if item['sales_staff__username'] else "Unassigned",
+                    "customer_count": item['customer_count']
+                }
+                for item in new_customers_count_with_salesman
+            ],
+        }
+
+        serializer = Overview_Dashboard_Summary(data)
+        return Response(serializer.data)
+
+class SalesDashbordAPIView(APIView):
+    authentication_classes = [BasicAuthentication]
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request, *args, **kwargs):
+        user = request.user  # Get the logged-in user
+        print("user",user)
+
+        # Ensure only "owner" user type can access
+        if user.user_type != 'owner' and (not user.designation_id or user.designation_id.designation_name.lower() != "owner"):
+            return Response({"detail": "You do not have permission to access this resource."}, status=status.HTTP_403_FORBIDDEN)
+
+        # Get the date from the request or use today's date
+        date_str = request.GET.get('date')
+        if date_str:
+            try:
+                selected_date = datetime.strptime(date_str, '%Y-%m-%d').date()
+            except ValueError:
+                return Response({"success": False, "message": "Invalid date format. Use YYYY-MM-DD."}, status=status.HTTP_400_BAD_REQUEST)
+        else:
+            selected_date = date.today()  # Default to today's date
+
+        yesterday_date = selected_date - timedelta(days=1)
+
+        # Helper function to get sales per day for a given week
+        def get_sales_per_day_for_week(start_date):
+            end_date = start_date + timedelta(weeks=1)
+            supply_sales = CustomerSupply.objects.filter(
+                created_date__date__range=[start_date, end_date]
+            ).values('created_date__week_day').annotate(count=Count('id'))
+
+            coupon_sales = CustomerCoupon.objects.filter(
+                created_date__date__range=[start_date, end_date]
+            ).values('created_date__week_day').annotate(count=Count('id'))
+
+            combined_sales = {i: 0 for i in range(1, 8)}
+            for sale in supply_sales:
+                combined_sales[sale['created_date__week_day']] += sale['count']
+            for sale in coupon_sales:
+                combined_sales[sale['created_date__week_day']] += sale['count']
+
+            return [{'weekday': k, 'count': v} for k, v in combined_sales.items()]
+
+        # Weekly sales calculations
+        this_week_start = selected_date - timedelta(days=selected_date.weekday())
+        last_week_start = this_week_start - timedelta(weeks=1)
+        second_last_week_start = this_week_start - timedelta(weeks=2)
+        third_last_week_start = this_week_start - timedelta(weeks=3)
+
+        # Monthly sales (same month last year)
+        last_year_start = selected_date.replace(year=selected_date.year - 1, day=1)
+        last_year_end = (last_year_start + timedelta(days=31)).replace(day=1) - timedelta(days=1)
+
+        last_year_sales = CustomerSupply.objects.filter(
+            created_date__date__range=[last_year_start, last_year_end]
+        ).values('created_date__day').annotate(count=Count('id'))
+
+        num_days = monthrange(last_year_start.year, last_year_start.month)[1]
+        full_sales_data = [{'day': day, 'count': 0} for day in range(1, num_days + 1)]
+        for sale in last_year_sales:
+            full_sales_data[sale['created_date__day'] - 1] = {'day': sale['created_date__day'], 'count': sale['count']}
+
+        # Today's sales
+        todays_supply_instances = CustomerSupply.objects.filter(created_date__date=selected_date)
+        supply_cash_sales_instances = todays_supply_instances.filter(amount_recieved__gt=0).exclude(customer__sales_type="CASH COUPON")
+
+        total_cash_sales_amount = supply_cash_sales_instances.aggregate(total_amount=Sum('subtotal'))['total_amount'] or 0
+        total_credit_sales_amount = supply_cash_sales_instances.aggregate(total_amount=Sum('subtotal'))['total_amount'] or 0
+        total_sales_grand_total = total_cash_sales_amount + total_credit_sales_amount
+
+        # Coupon sales
+        total_recharge_sales_amount = CustomerCoupon.objects.filter(created_date__date=selected_date).aggregate(total_amount=Sum('total_payeble'))['total_amount'] or 0
+
+        # Old collections
+        old_payment_collections_instances = CollectionPayment.objects.filter(created_date__date=selected_date)
+        total_old_payment_cash_collections = old_payment_collections_instances.filter(customer__sales_type="CASH").aggregate(total_amount_recieved=Sum('amount_received'))['total_amount_recieved'] or 0
+        total_old_payment_credit_collections = old_payment_collections_instances.filter(customer__sales_type="CREDIT").aggregate(total_amount_recieved=Sum('amount_received'))['total_amount_recieved'] or 0
+        total_old_payment_coupon_collections = old_payment_collections_instances.filter(customer__sales_type="CASH COUPON").aggregate(total_amount_recieved=Sum('amount_received'))['total_amount_recieved'] or 0
+
+        # Outstanding amounts
+        today_outstandings = OutstandingAmount.objects.filter(customer_outstanding__created_date__date=selected_date)
+        total_cash_outstanding_amounts = today_outstandings.filter(customer_outstanding__customer__sales_type="CASH").aggregate(total_amount=Sum('amount'))['total_amount'] or 0
+        total_credit_outstanding_amounts = today_outstandings.filter(customer_outstanding__customer__sales_type="CREDIT").aggregate(total_amount=Sum('amount'))['total_amount'] or 0
+        total_outstanding_amounts = total_cash_outstanding_amounts + total_credit_outstanding_amounts
+        total_coupon_outstanding_amounts = today_outstandings.filter(customer_outstanding__customer__sales_type="CASH COUPON").aggregate(total_amount=Sum('amount'))['total_amount'] or 0       
+
+        # Final response data
+        response_data = {
+            "selected_date": selected_date,
+            "yesterday_date": yesterday_date,
+            "total_cash_sales_amount": total_cash_sales_amount,
+            "total_credit_sales_amount": total_credit_sales_amount,
+            "total_sales_grand_total": total_sales_grand_total,
+            "total_recharge_sales_amount": total_recharge_sales_amount,
+            "total_old_payment_cash_collections": total_old_payment_cash_collections,
+            "total_old_payment_credit_collections": total_old_payment_credit_collections,
+            "total_old_payment_grand_total_collections": total_old_payment_cash_collections + total_old_payment_credit_collections,
+            "total_old_payment_coupon_collections": total_old_payment_coupon_collections,
+            "total_cash_outstanding_amounts": total_cash_outstanding_amounts,
+            "total_credit_outstanding_amounts": total_credit_outstanding_amounts,
+            "total_outstanding_amounts": total_outstanding_amounts,
+            "total_coupon_outstanding_amounts": total_coupon_outstanding_amounts,
+            "this_week_sales": get_sales_per_day_for_week(this_week_start),
+            "last_week_sales": get_sales_per_day_for_week(last_week_start),
+            "second_last_week_sales": get_sales_per_day_for_week(second_last_week_start),
+            "third_last_week_sales": get_sales_per_day_for_week(third_last_week_start),
+            "last_year_monthly_avg_sales": full_sales_data
+        }
+
+        serializer = SalesDashboardSerializer(response_data)
+
+        return Response({"success": True, "message": "Sales data retrieved successfully", "data": serializer.data}, status=status.HTTP_200_OK)
+
+class BottleStatisticsDashboardAPIView(APIView):
+    authentication_classes = [BasicAuthentication]
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request, *args, **kwargs):
+        user = request.user  # Get the logged-in user
+        print("user",user)
+
+        # Ensure only "owner" user type can access
+        if user.user_type != 'owner' and (not user.designation_id or user.designation_id.designation_name.lower() != "owner"):
+            return Response({"detail": "You do not have permission to access this resource."}, status=status.HTTP_403_FORBIDDEN)
+        date = request.GET.get("date", now().date())  # Default to today
+
+        # Fetch today's supply instances
+        todays_supply_instances = CustomerSupply.objects.filter(created_date__date=date)
+
+        # Calculate various bottle counts
+        today_supply_bottle_count = CustomerSupplyItems.objects.filter(
+            product__product_name="5 Gallon", customer_supply__pk__in=todays_supply_instances.values_list("pk")
+        ).aggregate(total_qty=Sum('quantity'))['total_qty'] or 0
+
+        today_custody_issued_count = CustodyCustomItems.objects.filter(
+            product__product_name="5 Gallon", custody_custom__created_date__date=date
+        ).aggregate(total_qty=Sum('quantity'))['total_qty'] or 0
+
+        today_empty_bottle_collected_count = todays_supply_instances.aggregate(
+            total_qty=Sum('collected_empty_bottle')
+        )['total_qty'] or 0
+
+        today_pending_bottle_given_count = todays_supply_instances.aggregate(
+            total_qty=Sum('allocate_bottle_to_pending')
+        )['total_qty'] or 0
+
+        today_pending_bottle_collected_count = max(today_supply_bottle_count - today_empty_bottle_collected_count, 0)
+
+        today_outstanding_bottle_count = OutstandingProduct.objects.filter(
+            customer_outstanding__created_date__date=date
+        ).aggregate(total_qty=Sum('empty_bottle'))['total_qty'] or 0
+
+        today_scrap_bottle_count = ScrapProductStock.objects.filter(
+            created_date__date=date
+        ).aggregate(total_qty=Sum('quantity'))['total_qty'] or 0
+
+        today_service_bottle_count = WashingProductStock.objects.filter(
+            created_date__date=date
+        ).aggregate(total_qty=Sum('quantity'))['total_qty'] or 0
+
+        today_fresh_bottle_stock = ProductStock.objects.filter(
+            product_name__product_name="5 Gallon"
+        ).aggregate(total_qty=Sum('quantity'))['total_qty'] or 0
+
+        total_used_bottle_count = WashedUsedProduct.objects.filter(
+            product__product_name="5 Gallon"
+        ).aggregate(total_qty=Sum('quantity'))['total_qty'] or 0
+
+        # Create response dictionary
+        data = {
+            "today_supply_bottle_count": today_supply_bottle_count,
+            "today_custody_issued_count": today_custody_issued_count,
+            "today_empty_bottle_collected_count": today_empty_bottle_collected_count,
+            "today_pending_bottle_given_count": today_pending_bottle_given_count,
+            "today_pending_bottle_collected_count": today_pending_bottle_collected_count,
+            "today_outstanding_bottle_count": today_outstanding_bottle_count,
+            "today_scrap_bottle_count": today_scrap_bottle_count,
+            "today_service_bottle_count": today_service_bottle_count,
+            "today_fresh_bottle_stock": today_fresh_bottle_stock,
+            "total_used_bottle_count": total_used_bottle_count,
+        }
+
+        serializer = BottleStatisticsSerializer(data)
+        return Response(serializer.data)

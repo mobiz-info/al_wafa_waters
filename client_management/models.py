@@ -39,6 +39,7 @@ CUSTOMER_ORDER_STATUS = (
     ('pending','Pending'),
     ('approve','Approved'),
     ('deliverd','Deliverd'),
+    ('emergency','Added in emergency schedule'),
     ('reject','Reject'),
 )
 
@@ -657,7 +658,7 @@ class CustomerOrders(models.Model):
     
 class CustomerOrdersItems(models.Model):
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
-    customer_order = models.ForeignKey(CustomerOrders, on_delete=models.CASCADE)
+    customer_order = models.ForeignKey(CustomerOrders, on_delete=models.CASCADE, related_name="items")
     product = models.ForeignKey(ProdutItemMaster, on_delete=models.CASCADE,null=True,blank=True)
     quantity = models.DecimalField(default=1, max_digits=10, decimal_places=0)
     price = models.DecimalField(default=0, max_digits=10, decimal_places=2)

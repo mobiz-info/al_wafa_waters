@@ -114,7 +114,8 @@ class StaffOrderDetailsSerializers(serializers.ModelSerializer):
         fields = '__all__'
 class  CustomerCartItemsSerializer(serializers.ModelSerializer):
     product_id = serializers.SerializerMethodField()
-    product_name = serializers.SerializerMethodField() 
+    product_name = serializers.SerializerMethodField()
+    price = serializers.SerializerMethodField()
     
     class Meta:
         model = CustomerCartItems
@@ -128,7 +129,10 @@ class  CustomerCartItemsSerializer(serializers.ModelSerializer):
         return product_id
     
     def get_product_name(self,obj):
-        return obj.product.product_name   
+        return obj.product.product_name 
+    
+    def get_price(self,obj):
+        return obj.price * obj.quantity
      
         
 class  CustomerCartSerializer(serializers.ModelSerializer):
@@ -153,21 +157,21 @@ class CustomerCartItemsPostSerializer(serializers.ModelSerializer):
         fields = ['product', 'quantity', 'price']
 
 class CustomerCartPostSerializer(serializers.ModelSerializer):
-    items = CustomerCartItemsPostSerializer()
+    # items = CustomerCartItemsPostSerializer()
 
     class Meta:
         model = CustomerCart
-        fields = ['grand_total', 'delivery_date', 'items']
+        fields = ['grand_total', 'delivery_date']
 
-    def create(self, validated_data):
-        # Extract the single item data
-        item_data = validated_data.pop('items')
-        cart_instance = super().create(validated_data)
+    # def create(self, validated_data):
+    #     # Extract the single item data
+    #     item_data = validated_data.pop('items')
+    #     cart_instance = super().create(validated_data)
         
-        # Create the single cart item
-        CustomerCartItems.objects.create(customer_cart=cart_instance, **item_data)
+    #     # Create the single cart item
+    #     CustomerCartItems.objects.create(customer_cart=cart_instance, **item_data)
         
-        return cart_instance
+    #     return cart_instance
         
         
 class  CustomerOrderItemsSerializer(serializers.ModelSerializer):
@@ -2701,26 +2705,6 @@ class CustomerRequestUpdateSerializer(serializers.Serializer):
 #             raise serializers.ValidationError({"cancel_reason": "This field is required when status is 'cancel'."})
 #         return data
     
-class Overview_Dashboard_Summary(serializers.Serializer):
-    cash_sales = serializers.IntegerField()
-    credit_sales = serializers.IntegerField()
-    total_sales_count = serializers.IntegerField()
-    today_expenses = serializers.FloatField()
-    total_today_collections = serializers.FloatField()
-    total_old_payment_collections = serializers.FloatField()
-    total_collection = serializers.FloatField()
-    total_cash_in_hand = serializers.FloatField()
-    active_van_count = serializers.IntegerField()
-    delivery_progress = serializers.CharField()
-    total_customers_count = serializers.IntegerField()
-    new_customers_count = serializers.IntegerField()
-    door_lock_count = serializers.IntegerField()
-    emergency_customers_count = serializers.IntegerField()
-    total_vocation_customers_count = serializers.IntegerField()
-    yesterday_missed_customers_count = serializers.IntegerField()
-    new_customers_count_with_salesman = serializers.ListField(
-        child=serializers.DictField()
-    )
 
 class SalesmanCustomerRequestTypeSerializer(serializers.ModelSerializer):
     class Meta:
@@ -2792,3 +2776,61 @@ class ScrapClearanceReportSerializer(serializers.ModelSerializer):
     class Meta:
         model = ScrapcleanedStock
         fields = ['id', 'product', 'product_name', 'quantity', 'created_date', 'created_by']
+class Overview_Dashboard_Summary(serializers.Serializer):
+    cash_sales = serializers.IntegerField()
+    credit_sales = serializers.IntegerField()
+    total_sales_count = serializers.IntegerField()
+    today_expenses = serializers.FloatField()
+    total_today_collections = serializers.FloatField()
+    total_old_payment_collections = serializers.FloatField()
+    total_collection = serializers.FloatField()
+    total_cash_in_hand = serializers.FloatField()
+    active_van_count = serializers.IntegerField()
+    delivery_progress = serializers.CharField()
+    total_customers_count = serializers.IntegerField()
+    new_customers_count = serializers.IntegerField()
+    door_lock_count = serializers.IntegerField()
+    emergency_customers_count = serializers.IntegerField()
+    total_vocation_customers_count = serializers.IntegerField()
+    yesterday_missed_customers_count = serializers.IntegerField()
+    new_customers_count_with_salesman = serializers.ListField(
+        child=serializers.DictField()
+    )
+
+class SalesDashboardSerializer(serializers.Serializer):
+    selected_date = serializers.DateField(format='%Y-%m-%d')
+    yesterday_date = serializers.DateField(format='%Y-%m-%d')
+    
+    total_cash_sales_amount = serializers.DecimalField(max_digits=10, decimal_places=2)
+    total_credit_sales_amount = serializers.DecimalField(max_digits=10, decimal_places=2)
+    total_sales_grand_total = serializers.DecimalField(max_digits=10, decimal_places=2)
+    
+    total_recharge_sales_amount = serializers.DecimalField(max_digits=10, decimal_places=2)
+    
+    total_old_payment_cash_collections = serializers.DecimalField(max_digits=10, decimal_places=2)
+    total_old_payment_credit_collections = serializers.DecimalField(max_digits=10, decimal_places=2)
+    total_old_payment_grand_total_collections = serializers.DecimalField(max_digits=10, decimal_places=2)
+    total_old_payment_coupon_collections = serializers.DecimalField(max_digits=10, decimal_places=2)
+    
+    total_cash_outstanding_amounts = serializers.DecimalField(max_digits=10, decimal_places=2)
+    total_credit_outstanding_amounts = serializers.DecimalField(max_digits=10, decimal_places=2)
+    total_outstanding_amounts = serializers.DecimalField(max_digits=10, decimal_places=2)
+    total_coupon_outstanding_amounts = serializers.DecimalField(max_digits=10, decimal_places=2)
+    
+    this_week_sales = serializers.ListField()
+    last_week_sales = serializers.ListField()
+    second_last_week_sales = serializers.ListField()
+    third_last_week_sales = serializers.ListField()
+    last_year_monthly_avg_sales = serializers.ListField()
+
+class BottleStatisticsSerializer(serializers.Serializer):
+    today_supply_bottle_count = serializers.IntegerField()
+    today_custody_issued_count = serializers.IntegerField()
+    today_empty_bottle_collected_count = serializers.IntegerField()
+    today_pending_bottle_given_count = serializers.IntegerField()
+    today_pending_bottle_collected_count = serializers.IntegerField()
+    today_outstanding_bottle_count = serializers.IntegerField()
+    today_scrap_bottle_count = serializers.IntegerField()
+    today_service_bottle_count = serializers.IntegerField()
+    today_fresh_bottle_stock = serializers.IntegerField()
+    total_used_bottle_count = serializers.IntegerField()

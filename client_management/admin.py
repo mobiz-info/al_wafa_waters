@@ -84,6 +84,7 @@ admin.site.register(CustomerSupply, CustomerSupplyAdmin)
 admin.site.register(CustomerSupplyItems)
 admin.site.register(CustomerSupplyStock)
 admin.site.register(CustomerCart)
+admin.site.register(CustomerCartItems)
 admin.site.register(CustomerOtherProductChargesChanges)
 admin.site.register(CustomerOtherProductCharges)
 

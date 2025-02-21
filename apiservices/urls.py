@@ -349,13 +349,12 @@ urlpatterns = [
     
     path('update-customer-request-status/', UpdateCustomerRequestStatusView.as_view(), name='update-customer-request-status'),
 
-    path('overview/', OverviewAPIView.as_view(), name='overview-api'),
 
     path('salesman-customer-request-types/', SalesmanCustomerRequestTypeAPIView.as_view()),
     path('salesman-customer-requests/', SalesmanCustomerRequestCreateAPIView.as_view()),
     path('salesman-customer-requests-lists/', SalesmanCustomerRequestListAPIView.as_view()),
     path('update-salesman-customer-request-status/<uuid:request_id>/', UpdateSalesmanCustomerRequestStatusView.as_view()),
-
+    path('all-salesman-customer-requests-lists/', AllSalesmanCustomerRequestListAPIView.as_view()),
     #-----------------------------Auditing--------------------------------------------
     path('audit-list/', AuditListAPIView.as_view(), name='audit-list'),
     path('audit-details/<uuid:audit_id>/', AuditDetailListAPIView.as_view(), name='audit-details'),
@@ -365,6 +364,9 @@ urlpatterns = [
     
     path('production-onload-report/', ProductionOnloadReportAPIView.as_view(), name='production_onload_report_api'),
     path('scrap-clearence-report/', ScrapClearanceReportAPIView.as_view(), name='scrap_clearence_report_api'),
+    
+    path('overview/', OverviewAPIView.as_view(), name='overview-api'),
+    path('sales-dashboard/', SalesDashbordAPIView.as_view(), name='sales-dashboard'),
+    path('bottle-statistics-dashboard/', BottleStatisticsDashboardAPIView.as_view(), name='bottle-statistics-dashboard'),
 
-
-]
+]   

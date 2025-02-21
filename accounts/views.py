@@ -880,13 +880,10 @@ def edit_customer(request,pk):
                 data.save()
                 
                 if not data.user_id:
-                    print("not user")
-                    
                     mobile_no = form.cleaned_data.get("mobile_no")
                     customer_name = form.cleaned_data.get("customer_name")
 
                     if mobile_no:
-                        print("no mobile")
                         hashed_password = make_password(mobile_no)
 
                         customer_user_data,new_user = CustomUser.objects.get_or_create(
@@ -1046,7 +1043,7 @@ def customer_list_excel(request):
         table_border_format = workbook.add_format({'border':1})
         worksheet.conditional_format(4, 0, len(df.index)+4, len(df.columns) - 1, {'type':'cell', 'criteria': '>', 'value':0, 'format':table_border_format})
         merge_format = workbook.add_format({'align': 'center', 'bold': True, 'font_size': 16, 'border': 1})
-        worksheet.merge_range('A1:L2', f'Al Wafa Water', merge_format)
+        worksheet.merge_range('A1:L2', f'Al Wafa', merge_format)
         merge_format = workbook.add_format({'align': 'center', 'bold': True, 'border': 1})
         worksheet.merge_range('A3:L3', f'    Customer List   ', merge_format)
         # worksheet.merge_range('E3:H3', f'Date: {def_date}', merge_format)
