@@ -348,6 +348,7 @@ urlpatterns = [
     path('customer-requests-lists/', CustomerRequestListAPIView.as_view(), name='customer_request_list'),
     
     path('update-customer-request-status/', UpdateCustomerRequestStatusView.as_view(), name='update-customer-request-status'),
+    path('all-customer-requests-lists/', AllCustomerRequestListAPIView.as_view(), name='all-customer-requests-lists'),
 
 
     path('salesman-customer-request-types/', SalesmanCustomerRequestTypeAPIView.as_view()),
@@ -368,5 +369,8 @@ urlpatterns = [
     path('overview/', OverviewAPIView.as_view(), name='overview-api'),
     path('sales-dashboard/', SalesDashbordAPIView.as_view(), name='sales-dashboard'),
     path('bottle-statistics-dashboard/', BottleStatisticsDashboardAPIView.as_view(), name='bottle-statistics-dashboard'),
+    path('coupon-overview-dashboard/', CouponDashboardAPIView.as_view(), name='coupon-overview-dashboard'),
+    path('customer-statistics-dashboard/', CustomerStatisticsDashboardAPIView.as_view(), name='customer-statistics-dashboard'),
+    path('others-dashboard/', OthersDashboardAPIView.as_view(), name='others-dashboard'),
 
-]   
+]

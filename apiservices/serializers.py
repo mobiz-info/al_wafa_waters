@@ -20,7 +20,7 @@ from coupon_management.models import *
 from accounts.models import *
 from credit_note.models import CreditNote
 from product.templatetags.purchase_template_tags import get_van_current_stock
-
+from master.serializers import SalesmanSupplyCountSerializer
 
 class CustomerCustodyItemSerializers(serializers.ModelSerializer):
     class Meta:
@@ -2669,15 +2669,33 @@ class CustomerRequestTypeSerializer(serializers.ModelSerializer):
         fields = ['id', 'name', 'created_date', 'modified_by', 'modified_date']
 
 class CustomerRequestSerializer(serializers.ModelSerializer):
+    route_name = serializers.CharField(source='customer.routes.route_name', read_only=True)
+    address = serializers.SerializerMethodField() 
+    phone_no = serializers.CharField(source='customer.mobile_no', read_only=True) 
+    
     class Meta:
         model = CustomerRequests
-        fields = ['id', 'customer', 'request_type', 'status', 'created_date']
-        read_only_fields = ['id', 'status', 'created_date']
+        fields = ['id', 'customer', 'request_type', 'status', 'created_date', 'route_name', 'address', 'phone_no']
+        read_only_fields = ['id', 'status', 'created_date', 'route_name', 'address', 'phone_no']
 
     def validate_request_type(self, value):
         if not value:
             raise serializers.ValidationError("Request type is required.")
         return value
+    
+    def get_address(self, obj):
+        """Returns full address using customer details"""
+        customer = obj.customer
+        if customer:
+            address_parts = filter(None, [
+                customer.building_name,
+                customer.door_house_no,
+                customer.floor_no,
+                customer.location.location_name if customer.location else None,
+                customer.emirate.name if customer.emirate else None
+            ])
+            return ", ".join(address_parts)
+        return None
 
 class CustomerRequestListSerializer(serializers.ModelSerializer):
     request_type_name = serializers.SerializerMethodField()
@@ -2724,16 +2742,32 @@ class SalesmanCustomerRequestSerializer(serializers.ModelSerializer):
     salesman_name = serializers.CharField(source='salesman.get_full_name', read_only=True)  
     customer_name = serializers.CharField(source='customer.customer_name', read_only=True) 
     request_type_name = serializers.CharField(source='request_type.name', read_only=True)
-
+    route_name = serializers.CharField(source='customer.routes.route_name', read_only=True)
+    address = serializers.SerializerMethodField() 
+    phone_no = serializers.CharField(source='customer.mobile_no', read_only=True) 
+    
     class Meta:
         model = SalesmanCustomerRequests
         fields = [
             'id', 'salesman', 'salesman_name', 'customer', 'customer_name', 
             'request_type', 'request_type_name', 'status', 
-            'created_date', 'modified_by', 'modified_date'
+            'created_date', 'modified_by', 'modified_date', 'route_name', 'address', 'phone_no'
         ]
-        read_only_fields = ['id', 'created_date', 'modified_by', 'modified_date']
-
+        read_only_fields = ['id', 'created_date', 'modified_by', 'modified_date', 'route_name', 'address', 'phone_no']
+    
+    def get_address(self, obj):
+        """Returns full address using customer details"""
+        customer = obj.customer
+        if customer:
+            address_parts = filter(None, [
+                customer.building_name,
+                customer.door_house_no,
+                customer.floor_no,
+                customer.location.location_name if customer.location else None,
+                customer.emirate.name if customer.emirate else None
+            ])
+            return ", ".join(address_parts)
+        return None
 class SalesmanCustomerRequestListSerializer(serializers.ModelSerializer):
     class Meta:
         model = SalesmanCustomerRequests
@@ -2815,7 +2849,9 @@ class SalesDashboardSerializer(serializers.Serializer):
     total_sales_grand_total = serializers.DecimalField(max_digits=10, decimal_places=2)
     
     total_recharge_sales_amount = serializers.DecimalField(max_digits=10, decimal_places=2)
-    
+    total_today_collections = serializers.DecimalField(max_digits=10, decimal_places=2)  # Added field
+    total_recharge_cash_sales = serializers.DecimalField(max_digits=10, decimal_places=2)  # Added field
+
     total_old_payment_cash_collections = serializers.DecimalField(max_digits=10, decimal_places=2)
     total_old_payment_credit_collections = serializers.DecimalField(max_digits=10, decimal_places=2)
     total_old_payment_grand_total_collections = serializers.DecimalField(max_digits=10, decimal_places=2)
@@ -2831,6 +2867,10 @@ class SalesDashboardSerializer(serializers.Serializer):
     second_last_week_sales = serializers.ListField()
     third_last_week_sales = serializers.ListField()
     last_year_monthly_avg_sales = serializers.ListField()
+class SalesmanSupplyChartSerializer(serializers.Serializer):  # Change from ModelSerializer to Serializer
+    salesman_name = serializers.CharField()
+    supply_count = serializers.IntegerField()
+    empty_bottle_count = serializers.IntegerField()
 
 class BottleStatisticsSerializer(serializers.Serializer):
     today_supply_bottle_count = serializers.IntegerField()
@@ -2843,3 +2883,33 @@ class BottleStatisticsSerializer(serializers.Serializer):
     today_service_bottle_count = serializers.IntegerField()
     today_fresh_bottle_stock = serializers.IntegerField()
     total_used_bottle_count = serializers.IntegerField()
+    salesman_based_bottle_chart = SalesmanSupplyChartSerializer(many=True)
+
+class CouponDashboardSerializer(serializers.Serializer):
+    manual_coupon_sold_count = serializers.IntegerField()
+    digital_coupon_sold_count = serializers.IntegerField()
+    collected_manual_coupons_count = serializers.IntegerField()
+    collected_digital_coupons_count = serializers.IntegerField()
+    today_pending_manual_coupons_count = serializers.IntegerField()
+    today_pending_digital_coupons_count = serializers.IntegerField()
+    today_pending_manual_coupons_collected_count = serializers.IntegerField()
+    today_pending_digital_coupons_collected_count = serializers.IntegerField()
+    today_manual_coupon_outstanding_count = serializers.IntegerField()
+    today_digital_coupon_outstanding_count = serializers.IntegerField()
+    coupon_salesman_recharge_data = serializers.ListField()
+
+class CustomerStatisticsSerializer(serializers.Serializer):
+    total_customers_count = serializers.IntegerField()
+    inactive_customers_count = serializers.IntegerField()
+    call_customers_count = serializers.IntegerField()
+    total_vocation_customers_count = serializers.IntegerField()
+    route_data = serializers.ListField()
+    route_inactive_customer_count = serializers.DictField()
+    non_visited_customers_data = serializers.ListField()
+
+class OthersDashboardSerializer(serializers.Serializer):
+    total_expense = serializers.DecimalField(max_digits=10, decimal_places=2)
+    today_coupon_requests_count = serializers.IntegerField()
+    today_orders_count = serializers.IntegerField()
+    pending_complaints_count = serializers.IntegerField()
+    resolved_complaints_count = serializers.IntegerField()
