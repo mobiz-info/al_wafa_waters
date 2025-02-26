@@ -9709,203 +9709,203 @@ class VanOnloadProductionAPIView(APIView):
                 status=status.HTTP_403_FORBIDDEN
             )
         
-        try:
-            with transaction.atomic():
-                order_item =  Staff_Orders_details.objects.get(pk=order_product_id)
-                varified_product_details = OrderVerifiedproductDetails.objects.get(order_varified_id__order=order_item.staff_order_id,product_id=order_item.product_id)
-                    
-                product_item_instance = ProdutItemMaster.objects.get(pk=order_item.product_id.pk)
-                van_instance = get_object_or_404(Van, salesman_id__id=order_item.staff_order_id.created_by)
-                van_stock_instance = VanProductStock.objects.get(created_date=order_item.staff_order_id.order_date,product=product_item_instance,van=van_instance)
-                    
-                if product_item_instance.category.category_name != "Coupons":
-                    if product_item_instance.product_name.lower() == "5 gallon":
-                        
-                        # values
-                        damage_count = int(request.data.get("damage_count"))
-                        leak_count = int(request.data.get("leak_count"))
-                        service_count = int(request.data.get("service_count"))
-                        # issue order
-                        used_count = int(request.data.get("used_count"))
-                        fresh_count = int(request.data.get("fresh_count"))
-                        
-                        # Get the van's current stock of the product
-                        quantity_issued = varified_product_details.issued_qty
-                        
-                        if int(quantity_issued) != 0 and van_instance.bottle_count > int(quantity_issued) + van_stock_instance.stock:
-                            van_limit = True
-                        else:
-                            van_limit = False
+        # try:
+        #     with transaction.atomic():
+        order_item =  Staff_Orders_details.objects.get(pk=order_product_id)
+        varified_product_details = OrderVerifiedproductDetails.objects.filter(order_varified_id__order=order_item.staff_order_id,product_id=order_item.product_id).latest('order_varified_id__created_date')
+            
+        product_item_instance = ProdutItemMaster.objects.get(pk=order_item.product_id.pk)
+        van_instance = get_object_or_404(Van, salesman_id__id=order_item.staff_order_id.created_by)
+        van_stock_instance = VanProductStock.objects.get(created_date=order_item.staff_order_id.order_date,product=product_item_instance,van=van_instance)
+            
+        if product_item_instance.category.category_name != "Coupons":
+            if product_item_instance.product_name.lower() == "5 gallon":
+                
+                # values
+                damage_count = int(request.data.get("damage_count"))
+                leak_count = int(request.data.get("leak_count"))
+                service_count = int(request.data.get("service_count"))
+                # issue order
+                used_count = int(request.data.get("used_count"))
+                fresh_count = int(request.data.get("fresh_count"))
+                
+                # Get the van's current stock of the product
+                quantity_issued = varified_product_details.issued_qty
+                
+                if int(quantity_issued) != 0 and van_instance.bottle_count > int(quantity_issued) + van_stock_instance.stock:
+                    van_limit = True
+                else:
+                    van_limit = False
 
-                        if van_limit:
+                if van_limit:
+                
+                    if (int(damage_count) + int(leak_count)) > 0 :
                         
-                            if (int(damage_count) + int(leak_count)) > 0 :
-                                
-                                if int(damage_count) > 0:
-                                    ProductionDamage.objects.create(
-                                        product=product_item_instance,
-                                        route=RouteMaster.objects.get(route_name=van_instance.get_van_route()),
-                                        branch=request.user.branch_id,
-                                        product_from="used",
-                                        product_to="scrap",
-                                        quantity=int(damage_count),
-                                        reason=ProductionDamageReason.objects.get(reason__iexact="damage"),
-                                        created_by=request.user.id,
-                                        created_date=datetime.today().now(),
-                                    )
-                                
-                                if int(leak_count) > 0:
-                                    ProductionDamage.objects.create(
-                                        product=product_item_instance,
-                                        route=RouteMaster.objects.get(route_name=van_instance.get_van_route()),
-                                        branch=request.user.branch_id,
-                                        product_from="used",
-                                        product_to="scrap",
-                                        quantity=int(leak_count),
-                                        reason=ProductionDamageReason.objects.get(reason__iexact="leak"),
-                                        created_by=request.user.id,
-                                        created_date=datetime.today().now(),
-                                    )
-                                    
-                                if used_count > 0:
-                                    product_stock = WashedUsedProduct.objects.filter(product=product_item_instance).first()
-                                    product_stock.quantity -= used_count
-                                    product_stock.save()
-                                    
-                                if fresh_count > 0:
-                                    product_stock = ProductStock.objects.get(product_name=product_item_instance,branch=request.user.branch_id)
-                                    product_stock.quantity -= fresh_count
-                                    product_stock.save()
-                                    
-                                if int(damage_count) + int(leak_count) > 0:
-                                    product_stock = ScrapStock.objects.filter(product=product_item_instance).first()
-                                    product_stock.quantity += int(damage_count) + int(leak_count)
-                                    product_stock.save()
-                                    
-                                if service_count > 0:
-                                    
-                                    ProductionDamage.objects.create(
-                                        product=product_item_instance,
-                                        route=RouteMaster.objects.get(route_name=van_instance.get_van_route()),
-                                        branch=request.user.branch_id,
-                                        product_from="used",
-                                        product_to="service",
-                                        quantity=service_count,
-                                        reason=ProductionDamageReason.objects.get(reason__iexact="service"),
-                                        created_by=request.user.id,
-                                        created_date=datetime.today().now(),
-                                    )
-                                    
-                                    product_stock = WashingStock.objects.filter(product=product_item_instance).first()
-                                    product_stock.quantity += service_count
-                                    product_stock.save()
+                        if int(damage_count) > 0:
+                            ProductionDamage.objects.create(
+                                product=product_item_instance,
+                                route=RouteMaster.objects.get(route_name=van_instance.get_van_route()),
+                                branch=request.user.branch_id,
+                                product_from="used",
+                                product_to="scrap",
+                                quantity=int(damage_count),
+                                reason=ProductionDamageReason.objects.get(reason__iexact="damage"),
+                                created_by=request.user.id,
+                                created_date=datetime.today().now(),
+                            )
+                        
+                        if int(leak_count) > 0:
+                            ProductionDamage.objects.create(
+                                product=product_item_instance,
+                                route=RouteMaster.objects.get(route_name=van_instance.get_van_route()),
+                                branch=request.user.branch_id,
+                                product_from="used",
+                                product_to="scrap",
+                                quantity=int(leak_count),
+                                reason=ProductionDamageReason.objects.get(reason__iexact="leak"),
+                                created_by=request.user.id,
+                                created_date=datetime.today().now(),
+                            )
                             
-                            if int(damage_count) + int(leak_count) + int(service_count) > 0:
-                                van_stock_instance.stock -= damage_count + leak_count + service_count
-                                van_stock_instance.save()
-                                
-                            product_stock = get_object_or_404(ProductStock, product_name=product_item_instance,branch=van_instance.branch_id)
-                            stock_quantity = order_item.count
+                        if used_count > 0:
+                            product_stock = WashedUsedProduct.objects.filter(product=product_item_instance).first()
+                            product_stock.quantity -= used_count
+                            product_stock.save()
+                            
+                        if fresh_count > 0:
+                            product_stock = ProductStock.objects.get(product_name=product_item_instance,branch=request.user.branch_id)
+                            product_stock.quantity -= fresh_count
+                            product_stock.save()
+                            
+                        if int(damage_count) + int(leak_count) > 0:
+                            product_stock = ScrapStock.objects.filter(product=product_item_instance).first()
+                            product_stock.quantity += int(damage_count) + int(leak_count)
+                            product_stock.save()
+                            
+                        if service_count > 0:
+                            
+                            ProductionDamage.objects.create(
+                                product=product_item_instance,
+                                route=RouteMaster.objects.get(route_name=van_instance.get_van_route()),
+                                branch=request.user.branch_id,
+                                product_from="used",
+                                product_to="service",
+                                quantity=service_count,
+                                reason=ProductionDamageReason.objects.get(reason__iexact="service"),
+                                created_by=request.user.id,
+                                created_date=datetime.today().now(),
+                            )
+                            
+                            product_stock = WashingStock.objects.filter(product=product_item_instance).first()
+                            product_stock.quantity += service_count
+                            product_stock.save()
+                    
+                    if int(damage_count) + int(leak_count) + int(service_count) > 0:
+                        van_stock_instance.stock -= damage_count + leak_count + service_count
+                        van_stock_instance.save()
+                        
+                    product_stock = get_object_or_404(ProductStock, product_name=product_item_instance,branch=van_instance.branch_id)
+                    stock_quantity = order_item.count
 
-                            if 0 < int(quantity_issued) <= int(product_stock.quantity):
-                                # print("condition 1")
-                                issue_order = Staff_IssueOrders.objects.create(
-                                    created_by=str(request.user.id),
-                                    modified_by=str(request.user.id),
-                                    modified_date=datetime.now(),
-                                    product_id=product_item_instance,
-                                    staff_Orders_details_id=order_item,
-                                    quantity_issued=quantity_issued,
-                                    van=van_instance,
-                                    stock_quantity=stock_quantity
-                                )
-                                
-                                # print(int(quantity_issued),"bvjnj")
-                                product_stock.quantity -= int(quantity_issued)
-                                product_stock.save()
+                    if 0 < int(quantity_issued) <= int(product_stock.quantity):
+                        # print("condition 1")
+                        issue_order = Staff_IssueOrders.objects.create(
+                            created_by=str(request.user.id),
+                            modified_by=str(request.user.id),
+                            modified_date=datetime.now(),
+                            product_id=product_item_instance,
+                            staff_Orders_details_id=order_item,
+                            quantity_issued=quantity_issued,
+                            van=van_instance,
+                            stock_quantity=stock_quantity
+                        )
+                        
+                        # print(int(quantity_issued),"bvjnj")
+                        product_stock.quantity -= int(quantity_issued)
+                        product_stock.save()
 
-                                vanstock = VanStock.objects.create(
-                                    created_by=request.user.id,
-                                    created_date=order_item.staff_order_id.order_date,
-                                    modified_by=request.user.id,
-                                    modified_date=order_item.staff_order_id.order_date,
-                                    stock_type='opening_stock',
-                                    van=van_instance
-                                )
+                        vanstock = VanStock.objects.create(
+                            created_by=request.user.id,
+                            created_date=order_item.staff_order_id.order_date,
+                            modified_by=request.user.id,
+                            modified_date=order_item.staff_order_id.order_date,
+                            stock_type='opening_stock',
+                            van=van_instance
+                        )
 
-                                VanProductItems.objects.create(
-                                    product=product_item_instance,
-                                    count=int(quantity_issued),
-                                    van_stock=vanstock,
-                                )
-                                
-                                # print(van_instance)
-                                # print(van_instance.salesman.get_fullname())
+                        VanProductItems.objects.create(
+                            product=product_item_instance,
+                            count=int(quantity_issued),
+                            van_stock=vanstock,
+                        )
+                        
+                        # print(van_instance)
+                        # print(van_instance.salesman.get_fullname())
 
-                                if VanProductStock.objects.filter(created_date=order_item.staff_order_id.order_date, product=product_item_instance, van=van_instance).exists():
-                                    # print("exist", quantity_issued)
-                                    van_product_stock = VanProductStock.objects.get(created_date=order_item.staff_order_id.order_date, product=product_item_instance, van=van_instance)
-                                    # print(van_product_stock.stock, "before")
-                                    van_product_stock.stock += quantity_issued
-                                    # print(van_product_stock.stock, "after")
-                                    van_product_stock.save()
-                                else:
-                                    # print("not exist", quantity_issued)
-                                    van_product_stock = VanProductStock.objects.create(
-                                        created_date=order_item.staff_order_id.order_date,
-                                        product=product_item_instance,
-                                        van=van_instance,
-                                        stock=quantity_issued
-                                        )
-
-                                if (bottle_count:=BottleCount.objects.filter(van=van_product_stock.van,created_date__date=van_product_stock.created_date)).exists():
-                                    bottle_count = bottle_count.first()
-                                else:
-                                    bottle_count = BottleCount.objects.create(van=van_product_stock.van,created_date=van_product_stock.created_date)
-                                bottle_count.opening_stock += van_product_stock.stock
-                                bottle_count.save()
-
-                                order_item.issued_qty += int(quantity_issued)
-                                order_item.save()
-                                
-                                status_code = status.HTTP_200_OK
-                                response_data = {
-                                    "status": "true",
-                                    "title": "Successfully Created",
-                                    "message": "Product issued successfully.",
-                                    'redirect': 'true',
-                                }
-                            else:
-                                status_code = status.HTTP_400_BAD_REQUEST
-                                response_data = {
-                                    "status": "false",
-                                    "title": "Failed",
-                                    "message": f"No stock available in {product_stock.product_name}, only {product_stock.quantity} left",
-                                }
+                        if VanProductStock.objects.filter(created_date=order_item.staff_order_id.order_date, product=product_item_instance, van=van_instance).exists():
+                            # print("exist", quantity_issued)
+                            van_product_stock = VanProductStock.objects.get(created_date=order_item.staff_order_id.order_date, product=product_item_instance, van=van_instance)
+                            # print(van_product_stock.stock, "before")
+                            van_product_stock.stock += quantity_issued
+                            # print(van_product_stock.stock, "after")
+                            van_product_stock.save()
                         else:
-                            status_code = status.HTTP_400_BAD_REQUEST
-                            response_data = {
-                                "status": "false",
-                                "title": "Failed",
-                                "message": f"Over Load! currently {van_stock_instance.stock} Can Loaded, Max 5 Gallon Limit is {van_instance.bottle_count}",
-                            } 
-                        
-                        
-        except IntegrityError as e:
-            status_code = status.HTTP_400_BAD_REQUEST
-            response_data = {
-                "status": "false",
-                "title": "Failed",
-                "message": str(e),
-            }
+                            # print("not exist", quantity_issued)
+                            van_product_stock = VanProductStock.objects.create(
+                                created_date=order_item.staff_order_id.order_date,
+                                product=product_item_instance,
+                                van=van_instance,
+                                stock=quantity_issued
+                                )
 
-        except Exception as e:
-            status_code = status.HTTP_400_BAD_REQUEST
-            response_data = {
-                "status": "false",
-                "title": "Failed",
-                "message": str(e),
-            }
+                        if (bottle_count:=BottleCount.objects.filter(van=van_product_stock.van,created_date__date=van_product_stock.created_date)).exists():
+                            bottle_count = bottle_count.first()
+                        else:
+                            bottle_count = BottleCount.objects.create(van=van_product_stock.van,created_date=van_product_stock.created_date)
+                        bottle_count.opening_stock += van_product_stock.stock
+                        bottle_count.save()
+
+                        order_item.issued_qty += int(quantity_issued)
+                        order_item.save()
+                        
+                        status_code = status.HTTP_200_OK
+                        response_data = {
+                            "status": "true",
+                            "title": "Successfully Created",
+                            "message": "Product issued successfully.",
+                            'redirect': 'true',
+                        }
+                    else:
+                        status_code = status.HTTP_400_BAD_REQUEST
+                        response_data = {
+                            "status": "false",
+                            "title": "Failed",
+                            "message": f"No stock available in {product_stock.product_name}, only {product_stock.quantity} left",
+                        }
+                else:
+                    status_code = status.HTTP_400_BAD_REQUEST
+                    response_data = {
+                        "status": "false",
+                        "title": "Failed",
+                        "message": f"Over Load! currently {van_stock_instance.stock} Can Loaded, Max 5 Gallon Limit is {van_instance.bottle_count}",
+                    } 
+                        
+                        
+        # except IntegrityError as e:
+        #     status_code = status.HTTP_400_BAD_REQUEST
+        #     response_data = {
+        #         "status": "false",
+        #         "title": "Failed",
+        #         "message": str(e),
+        #     }
+
+        # except Exception as e:
+        #     status_code = status.HTTP_400_BAD_REQUEST
+        #     response_data = {
+        #         "status": "false",
+        #         "title": "Failed",
+        #         "message": str(e),
+        #     }
         return Response(response_data, status=status_code)
 #------------------------------Store Appp Api Comppletes-------------------------------------------------
 
