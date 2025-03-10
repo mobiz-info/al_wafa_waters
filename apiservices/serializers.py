@@ -1858,7 +1858,7 @@ class StaffOrdersSerializer(serializers.ModelSerializer):
         try:
             route = Van_Routes.objects.get(van__salesman__pk=obj.created_by)
             return route.routes.route_name
-        except Van_Routes.DoesNotExist:
+        except:
             return "--"
         
     def get_status(self, obj):
@@ -2084,16 +2084,14 @@ class StaffOrdersDetailsSerializer(serializers.ModelSerializer):
     def get_empty_bottle_count(self, obj):
         empty_bottle_stock = 0
         if obj.product_id.product_name == "5 Gallon" and (van_instance:=Van.objects.filter(salesman_id__id=obj.staff_order_id.created_by)).exists():
-            if VanProductStock.objects.filter(van=van_instance.first(),product=obj.product_id,created_date=obj.staff_order_id.created_date.date()).exists():
-                empty_bottle_stock = VanProductStock.objects.get(van=van_instance.first(),product=obj.product_id,created_date=obj.staff_order_id.created_date.date()).empty_can_count
+            empty_bottle_stock = VanProductStock.objects.get(van=van_instance.first(),product=obj.product_id,created_date=obj.staff_order_id.created_date.date()).empty_can_count
         
         return empty_bottle_stock
     
     def get_fresh_bottle_count(self, obj):
         fresh_bottle_stock = 0
         if obj.product_id.product_name == "5 Gallon" and (van_instance:=Van.objects.filter(salesman_id__id=obj.staff_order_id.created_by)).exists():
-            if VanProductStock.objects.filter(van=van_instance.first(),product=obj.product_id,created_date=obj.staff_order_id.created_date.date()).exists():
-                fresh_bottle_stock = VanProductStock.objects.get(van=van_instance.first(),product=obj.product_id,created_date=obj.staff_order_id.created_date.date()).stock
+            fresh_bottle_stock = VanProductStock.objects.get(van=van_instance.first(),product=obj.product_id,created_date=obj.staff_order_id.created_date.date()).stock
         
         return fresh_bottle_stock
     
