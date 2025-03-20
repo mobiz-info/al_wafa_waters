@@ -103,10 +103,11 @@ urlpatterns = [
     path('print-dsr-summary/', print_dsr_summary, name='print_dsr_summary'),
     # path('export-dsr-summary/', export_daily_summary_report, name='export_dsr_summary'),
     path('dsr-summary1/', dsr_summary1, name='dsr_summary1'),
+    path("get-salesmen/", get_salesmen_by_route, name="get_salesmen_by_route"),
     #------------------------------Bottle Count-------------------------------------
     path('van-route-bottle-count/', van_route_bottle_count, name='van_route_bottle_count'),
-    path('vans-route-bottle-count-add/<uuid:pk>/',VansRouteBottleCountAdd, name='bottle_count_add'),
-    path('vans-route-bottle-count-deduct/<uuid:pk>/',VansRouteBottleCountDeduct, name='bottle_count_deduct'),
+    path('vans-route-bottle-count-add/<uuid:van_id>/',VansRouteBottleCountAdd, name='bottle_count_add'),
+    path('vans-route-bottle-count-deduct/<uuid:van_id>/',VansRouteBottleCountDeduct, name='bottle_count_deduct'),
     
     
     #------------------DSR Outstanding Amount Collected Report-------------------------------------

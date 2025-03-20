@@ -4264,3 +4264,153 @@ def eligible_customers(request):
     }
 
     return render(request, 'client_management/customer_supply/eligible_customers.html', context)
+
+
+#-----------------------Audit------------------------------------
+
+class MarketingExecutiveRoutesView(View):
+    def get(self, request):
+        executives = None
+        selected_executive = None
+
+        if request.user.user_type == "marketing_executive":
+            selected_executive = request.user.id  
+        else:
+            executives = CustomUser.objects.filter(user_type="marketing_executive")
+            selected_executive = request.GET.get("executive")
+
+        routes = None
+        if selected_executive:
+            assigned_routes = Van_Routes.objects.filter(van__salesman=selected_executive).values_list("routes", flat=True)
+            routes = RouteMaster.objects.filter(route_id__in=assigned_routes)
+
+        return render(
+            request,
+            "client_management/audit/select_executive_routes.html",
+            {
+                "executives": executives,
+                "routes": routes,
+                "selected_executive": selected_executive,
+                "is_marketing_executive": request.user.user_type == "marketing_executive", 
+            },
+        )
+
+    def post(self, request):
+        selected_executive = request.POST.get("executive") or request.user.id  
+        selected_route = request.POST.get("route")
+
+        if selected_executive and selected_route:
+            request.session["selected_executive"] = selected_executive
+            return redirect("audit_customer_list", route_id=selected_route)
+
+        return redirect("select_executive")
+    
+    
+class CustomerListView(View):
+    def get(self, request, route_id):
+        route = get_object_or_404(RouteMaster, route_id=route_id)
+
+        customers = Customers.objects.filter(routes=route)
+
+        query = request.GET.get("q", "")
+        if query:
+            customers = customers.filter(
+                Q(customer_name__icontains=query) | 
+                Q(custom_id__icontains=query) |
+                Q(mobile_no__icontains=query) |
+                Q(building_name__icontains=query)
+            )
+        audit = AuditBase.objects.filter(route=route, end_date__isnull=True).first()
+        audit_in_progress = bool(audit)  
+
+        return render(
+            request,
+            "client_management/audit/customer_list.html",
+            {
+                "route": route,
+                "customers": customers,
+                "audit_in_progress": audit_in_progress,  
+                "filter_data": {"q": query},
+            },
+        )
+        
+    def post(self, request, route_id):
+        route = get_object_or_404(RouteMaster, route_id=route_id)
+
+        selected_executive_id = request.POST.get("executive") or request.session.get("selected_executive")
+       
+
+        marketing_executive = None
+        if selected_executive_id:
+            marketing_executive = CustomUser.objects.filter(id=selected_executive_id, user_type="marketing_executive").first()
+
+        audit = AuditBase.objects.filter(route=route, end_date__isnull=True).first()
+
+        if audit:
+            audit.end_date = timezone.now()
+            audit.save()
+        else:
+            audit = AuditBase.objects.create(
+                route=route, 
+                start_date=timezone.now(),
+                marketing_executieve=marketing_executive  
+            )
+
+        return redirect("audit_customer_list", route_id=route_id)
+
+class AuditDetailsView(View):
+    def get(self, request, customer_id):
+        customer = get_object_or_404(Customers, customer_id=customer_id)
+
+        audit_base, created = AuditBase.objects.get_or_create(
+            route=customer.routes,  
+            end_date__isnull=True,  
+            defaults={"start_date": timezone.now()},
+        )
+
+        audit_details, created = AuditDetails.objects.get_or_create(
+            audit_base=audit_base, 
+            customer=customer,
+        )
+
+        form = AuditDetailsForm(instance=audit_details)
+
+        return render(
+            request,
+            "client_management/audit/audit_details.html",
+            {
+                "customer": customer,
+                "form": form,
+            },
+        )
+
+    def post(self, request, customer_id):
+        customer = get_object_or_404(Customers, customer_id=customer_id)
+
+        audit_base = AuditBase.objects.filter(
+            route=customer.routes, 
+            end_date__isnull=True   
+        ).first()
+
+        if not audit_base:
+            messages.error(request, "No active audit found for this route. Start an audit first.")
+            return redirect("audit_customer_list", route_id=customer.routes.route_id)
+
+        audit_details, created = AuditDetails.objects.get_or_create(
+            audit_base=audit_base,  
+            customer=customer
+        )
+
+        form = AuditDetailsForm(request.POST, instance=audit_details)
+        if form.is_valid():
+            form.save()
+            return redirect("audit_customer_list", route_id=customer.routes.route_id)
+
+        return render(
+            request,
+            "client_management/audit/audit_details.html",
+            {
+                "customer": customer,
+                "form": form,
+            },
+        )

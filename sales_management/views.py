@@ -1276,7 +1276,7 @@ def download_salesreport_excel(request):
 #         table_border_format = workbook.add_format({'border':1})
 #         worksheet.conditional_format(4, 0, len(df.index)+4, len(df.columns) - 1, {'type':'cell', 'criteria': '>', 'value':0, 'format':table_border_format})
 #         merge_format = workbook.add_format({'align': 'center', 'bold': True, 'font_size': 16, 'border': 1})
-#         worksheet.merge_range('A1:J2'SanaAl Wafa', merge_format)
+#         worksheet.merge_range('A1:J2'SanaSana Water', merge_format)
 #         merge_format = workbook.add_format({'align': 'center', 'bold': True, 'border': 1})
 #         worksheet.merge_range('A3:J3', f'    Daily Collection Report   ', merge_format)
 #         # worksheet.merge_range('E3:H3', f'Date: {def_date}', merge_format)
@@ -4666,6 +4666,8 @@ def dsr_summary(request):
     
     return render(request, 'sales_management/dsr_summary.html', context)
 
+
+
 def dsr_summary1(request):
     
     filter_data = {}
@@ -4778,13 +4780,13 @@ def dsr_summary1(request):
     five_gallon_credit_sales = CustomerSupply.objects.none
     dialy_collections = InvoiceDailyCollection.objects.none
     pending_bottle_customer_instances = CustomerSupply.objects.none
-    salesman_instances = CustomUser.objects.filter(
-        Q(user_type='Salesman') | Q(user_type='marketing_executive')
-    )
     
     date = request.GET.get('date')
-    salesman_id = request.GET.get('salesman_id')
+    route_name = request.GET.get('route_name')
+    salesman_id = request.GET.get("salesman_id")
     
+    if salesman_id:
+        filter_data["salesman_id"] = salesman_id
     if date:
         date = datetime.strptime(date, '%Y-%m-%d').date()
         filter_data['filter_date'] = date.strftime('%Y-%m-%d')
@@ -4792,13 +4794,18 @@ def dsr_summary1(request):
         date = datetime.today().date()
         filter_data['filter_date'] = date.strftime('%Y-%m-%d')
     
-    if salesman_id:
+    if route_name:
         data_filter = True
+        van_route = Van_Routes.objects.filter(routes__route_name=route_name).first()
         
-        van_route = Van_Routes.objects.filter(van__salesman=salesman_id).first()
-        salesman = van_route.van.salesman
-        salesman_id = salesman.pk
-        filter_data['salesman_id'] = salesman_id
+        if van_route and van_route.van:
+            salesman = van_route.van.salesman
+            # salesman_id = salesman.pk
+            filter_data["route_name"] = route_name
+    
+    
+    
+    
         #new customers created
         new_customers_count = Customers.objects.filter(created_date__date=date,sales_staff_id=salesman).count()
         #emergency supply
@@ -5008,7 +5015,7 @@ def dsr_summary1(request):
         'van_route': van_route,
         'data_filter': data_filter,
         'salesman_id': salesman_id,
-        'salesman_instances':salesman_instances,
+        # 'salesman_instances':salesman_instances,
         # visit statistics
         'routes_instances': routes_instances,
         'non_visited_count': non_visited_count,
@@ -5129,6 +5136,19 @@ def dsr_summary1(request):
     }
     
     return render(request, 'sales_management/dsr_summary1.html', context)
+
+
+def get_salesmen_by_route(request):
+    route_name = request.GET.get('route_name')
+    if route_name:
+        van_routes = Van_Routes.objects.filter(routes__route_name=route_name)
+        salesmen = [
+            {"id": route.van.salesman.pk, "name": route.van.salesman.username}
+            for route in van_routes if route.van and route.van.salesman
+        ]
+        return JsonResponse({"salesmen": salesmen})
+    return JsonResponse({"salesmen": []})
+
 
 def print_dsr_summary(request):
     

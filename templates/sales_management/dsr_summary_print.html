@@ -132,7 +132,7 @@
                                             {% comment %} <td style="text-align:center;">{{stock_details.requested_count}}</td> {% endcomment %}
                                             <td style="text-align:center;">{{stock_details.issued_count}}</td>
                                             <td style="text-align:center;">{{van_data.opening_count|add:stock_details.issued_count}}</td>
-                                            <td style="text-align:center;">{{van_data.sold_count }}</td>
+                                            <td style="text-align:center;">{{ total_credit_amount_count|add:total_debit_amount_count|add:total_coupon_amount_count }}</td>
                                             <td style="text-align:center;">{{van_data.foc }}</td>
                                             <td style="text-align:center;">{{van_data.return_count}}</td>
                                             <td style="text-align:center;">{{van_data.damage_count}}</td>
