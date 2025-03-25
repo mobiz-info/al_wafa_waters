@@ -92,7 +92,7 @@ def customer_custody_item(request,customer_id):
                             stock_instance = CustomerCustodyStock.objects.get(customer=custody_custom_data.customer, product=item.product)
                             stock_instance.quantity += item.quantity
                             stock_instance.serialnumber = (stock_instance.serialnumber + ',' + item.serialnumber) if stock_instance.serialnumber else item.serialnumber
-                            stock_instance.agreement_no = (stock_instance.agreement_no + ',' + item.agreement_no) if stock_instance.agreement_no else item.agreement_no
+                            stock_instance.agreement_no = (stock_instance.agreement_no + ',' + item.custody_custom.agreement_no) if stock_instance.agreement_no else item.custody_custom.agreement_no
                             stock_instance.save()
                         else:
                             CustomerCustodyStock.objects.create(
