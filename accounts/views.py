@@ -44,11 +44,17 @@ def user_login(request):
     template_name = 'registration/user_login.html'
 
     if request.method == 'POST':
-        username = request.POST.get('username')
-        password = request.POST.get('password')
-        user = CustomUser.objects.get(username = username)
-        user = authenticate(username=username, password=password)
-        # print("::::::::::::::::::::::::::",user)
+        username = request.POST.get('username', '').strip()
+        password = request.POST.get('password', '').strip()
+
+        # Ensure fields are not empty
+        if not username or not password:
+            messages.error(request, "Username and password are required.")
+            return render(request, template_name)
+
+        # Authenticate user
+        user = authenticate(request, username=username, password=password)
+
         if user is not None:
             if user.is_active:
                 login(request, user)
@@ -58,21 +64,19 @@ def user_login(request):
                 )
                 return redirect('dashboard')
             else:
-                context = {'error_msg': 'Invalid Username or Password'}
+                messages.error(request, "Your account is inactive. Contact admin.")
                 log_activity(
                     created_by=username,
-                    description=f"User {username} failed to log in due to incorrect username or password."
+                    description=f"User {username} attempted login but account is inactive."
                 )
-                return render(request, template_name, context)
         else:
-            context = {'error_msg': 'User Doest Not exist'}
+            messages.error(request, "Invalid username or password.")
             log_activity(
                 created_by=username,
-                description=f"Login attempt failed: User {username} does not exist."
+                description=f"Failed login attempt for username: {username}."
             )
-            return render(request, template_name, context)
-        
-    return render(request, template_name)   
+
+    return render(request, template_name)
 
 class UserLogout(View):
 

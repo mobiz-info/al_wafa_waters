@@ -98,3 +98,25 @@ class DialyCustomersAdmin(admin.ModelAdmin):
     def route(self, obj):
         return obj.route.route_name
 admin.site.register(DialyCustomers,DialyCustomersAdmin)
+
+class CustodyCustomItemsAdmin(admin.ModelAdmin):
+    list_display = ('id','date','customer','product','quantity','serialnumber','amount')
+    ordering = ("-date",)
+    
+    def customer(self, obj):
+        return obj.custody_custom.customer.customer_name
+    
+    def product(self, obj):
+        return obj.product.product_name
+admin.site.register(CustodyCustomItems,CustodyCustomItemsAdmin)
+
+class CustomerCustodyStockAdmin(admin.ModelAdmin):
+    list_display = ('id','customer','product','quantity','serialnumber','amount')
+    ordering = ("-date",)
+    
+    def customer(self, obj):
+        return obj.customer.customer_name
+    
+    def product(self, obj):
+        return obj.product.product_name
+admin.site.register(CustomerCustodyStock,CustomerCustodyStockAdmin)
