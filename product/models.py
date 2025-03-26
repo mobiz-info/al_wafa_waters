@@ -26,7 +26,7 @@ SUPERVISOR_STATUS_CHOICES = (
         ('rejected', 'Rejected'),
     )
 class ProdutItemMaster(models.Model):
-    id   = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     created_by = models.CharField(max_length=20,  blank=True)
     created_date = models.DateTimeField(auto_now_add=True,blank=True, null=True)
     modified_by = models.CharField(max_length=20, null=True, blank=True)
@@ -153,6 +153,9 @@ class Staff_IssueOrders(models.Model):
     quantity_issued = models.CharField(max_length=50,null=True, blank=True)
     stock_quantity = models.CharField(max_length=50,null=True, blank=True)
     van = models.ForeignKey('van_management.Van', null=True, blank=True, on_delete=models.SET_NULL)
+    
+    empty_bottle_count = models.IntegerField(default=0)
+    extra_bottle_needed = models.IntegerField(default=0)
 
     STATUS_CHOICES = (
         ('Order Issued','Order Issued'),

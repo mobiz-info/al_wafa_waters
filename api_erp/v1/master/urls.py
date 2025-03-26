@@ -9,4 +9,9 @@ urlpatterns = [
     re_path(r'^emirate/$', views.emirate),
     re_path(r'^designation/$', views.designation),
     re_path(r'^location/$', views.location),
+    re_path(r'^users/$', views.user_list),
+    re_path(r'^customer/$', views.customer),
+    re_path(r'^product-items/$', views.product_item_list),
+    re_path(r'^van/$', views.van),
+    
 ]

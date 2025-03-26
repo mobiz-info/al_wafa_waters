@@ -8,8 +8,8 @@ from django.db.models.functions import Coalesce
 from accounts.models import CustomUser
 from client_management.models import CustomerSupply, CustomerSupplyItems
 from master.models import CategoryMaster
-from product.models import Staff_IssueOrders, Staff_Orders_details
-from van_management.models import Offload, Van, Van_Routes, VanCouponStock, VanProductItems, VanProductStock
+from product.models import Staff_IssueOrders, Staff_Orders_details,ProdutItemMaster
+from van_management.models import Offload, Van, Van_Routes, VanCouponStock, VanProductItems, VanProductStock,FreelanceVehicleOtherProductCharges
 
 register = template.Library()
 
@@ -112,3 +112,11 @@ def get_van_coupon_wise_stock(date, van, coupon):
             "total_stock": total_stock
         }
     return {}
+
+
+@register.simple_tag
+def other_product_rate(van_pk,product_id):
+    rate = ProdutItemMaster.objects.get(pk=product_id).rate
+    if (rate_change_instances:=FreelanceVehicleOtherProductCharges.objects.filter(product_item__pk=product_id,van__pk=van_pk)).exists():
+        rate = rate_change_instances.first().current_rate
+    return rate

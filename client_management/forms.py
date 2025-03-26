@@ -2,6 +2,7 @@ from django import forms
 from django.forms import ModelForm
 
 from sales_management.models import CollectionPayment
+from van_management.models import *
 from .models import *
 from accounts.models import Customers
 from django.db.models import Q
@@ -451,3 +452,16 @@ class EligibleCustomerConditionsForm(forms.ModelForm):
             'moq': forms.NumberInput(attrs={'class': 'form-control'}),
             'days': forms.NumberInput(attrs={'class': 'form-control'}),
         }
+        
+        
+class AuditDetailsForm(forms.ModelForm):
+    class Meta:
+        model = AuditDetails
+        fields = ['outstanding_amount', 'bottle_outstanding', 'outstanding_coupon']
+        
+        widgets = {
+                'outstanding_amount': forms.NumberInput(attrs={'class': 'form-control'}),
+                'bottle_outstanding': forms.NumberInput(attrs={'class': 'form-control'}),
+                'outstanding_coupon': forms.NumberInput(attrs={'class': 'form-control'}),
+            }
+        

@@ -94,6 +94,7 @@ urlpatterns = [
     path('staff_assigned_routes/',Route_Assign_Staff_Api.as_view(), name='staff_assigned_routes'),
     path('create/customer/',Customer_API.as_view()),
     path('create/customer/<str:id>/',Customer_API.as_view()),
+    path('get_items_api/',Get_Items_API.as_view()),
     path('get_items_api/<str:id>/',Get_Items_API.as_view()),
     path('add_custody_item/',Add_Customer_Custody_Item_API.as_view()),
     path('add_custody_item/<str:id>/',Add_Customer_Custody_Item_API.as_view()),
@@ -372,5 +373,8 @@ urlpatterns = [
     path('coupon-overview-dashboard/', CouponDashboardAPIView.as_view(), name='coupon-overview-dashboard'),
     path('customer-statistics-dashboard/', CustomerStatisticsDashboardAPIView.as_view(), name='customer-statistics-dashboard'),
     path('others-dashboard/', OthersDashboardAPIView.as_view(), name='others-dashboard'),
+    path('today-collection-dashboard/', TodayCollectionAPIView.as_view(), name='today-collection-dashboard'),
+    path('old-collections/', OldCollectionAPIView.as_view(), name='old-collections'),
+    path('total-collections/', TotalCollectionAPIView.as_view(), name='total-collections'),
 
 ]

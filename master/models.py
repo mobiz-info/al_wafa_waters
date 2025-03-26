@@ -111,4 +111,17 @@ class PrivacyPolicy(models.Model):
     def __str__(self):
         return "Privacy Policy"
 
-	
+class PermissionManagementTab(models.Model):
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    tab_name = models.CharField(max_length=255)
+    department = models.ForeignKey(DesignationMaster, on_delete=models.CASCADE, related_name='permission_tabs')  
+    created_by = models.CharField(max_length=20, blank=True)
+    created_date = models.DateTimeField(auto_now_add=True)
+    modified_by = models.CharField(max_length=20, null=True, blank=True)
+    modified_date = models.DateTimeField(blank=True, null=True)
+
+    class Meta:
+        ordering = ('-created_date',)
+
+    def __str__(self):
+        return str(self.tab_name)
