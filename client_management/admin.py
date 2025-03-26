@@ -100,7 +100,7 @@ class DialyCustomersAdmin(admin.ModelAdmin):
 admin.site.register(DialyCustomers,DialyCustomersAdmin)
 
 class CustodyCustomItemsAdmin(admin.ModelAdmin):
-    list_display = ('id','date','customer','product','quantity','serialnumber','amount')
+    list_display = ('id','customer','product','quantity','serialnumber','amount')
     
     def customer(self, obj):
         return obj.custody_custom.customer.customer_name
