@@ -5303,13 +5303,13 @@ class CustodyItemReturnAPI(APIView):
         try:
             customer = Customers.objects.get(customer_id=request.data['customer_id'])
             custody_stock_id = request.data['custody_stock_id']
-            agreement_no = request.data['agreement_no']
+            agreement_no = request.data.get('agreement_no', '')
             total_amount = int(request.data['total_amount'])
             deposit_type = request.data['deposit_type']
             reference_no = request.data['reference_no']
-            product =  ProdutItemMaster.objects.get(id=request.data['product_id'])
-            quantity =  int(request.data['quantity'])
-            serialnumber =  request.data['serialnumber']
+            product = ProdutItemMaster.objects.get(id=request.data['product_id'])
+            quantity = int(request.data['quantity'])
+            serialnumber = request.data.get('serialnumber', '')
 
             custody_return_instance = CustomerReturn.objects.create(
                 customer=customer,
@@ -5318,17 +5318,18 @@ class CustodyItemReturnAPI(APIView):
                 reference_no=reference_no
             )
 
-            # Create CustodyCustomItems instances
-            # for item_data in items_data:
-            item_intances = CustomerReturnItems.objects.create(
+            # Create CustomerReturnItems instance
+            item_instance = CustomerReturnItems.objects.create(
                 customer_return=custody_return_instance,
                 product=product,
                 quantity=quantity,
                 serialnumber=serialnumber,
                 amount=total_amount
             )
+
             try:
-                stock_instance, created = CustomerReturnStock.objects.get_or_create(customer=customer, product=product,
+                stock_instance, created = CustomerReturnStock.objects.get_or_create(
+                    customer=customer, product=product,
                     defaults={
                         'agreement_no': agreement_no,
                         'deposit_type': deposit_type,
@@ -5340,8 +5341,12 @@ class CustodyItemReturnAPI(APIView):
                 )
 
                 if not created:  
-                    stock_instance.agreement_no += ', ' + agreement_no
-                    stock_instance.serialnumber += ', ' + serialnumber
+                    stock_instance.agreement_no = (
+                        (stock_instance.agreement_no or '') + ',' + agreement_no
+                    ).strip(', ')
+                    stock_instance.serialnumber = (
+                        (stock_instance.serialnumber or '') + ',' + serialnumber
+                    ).strip(', ')
                     stock_instance.quantity += quantity
                     stock_instance.amount += total_amount
                     stock_instance.save()
@@ -5362,7 +5367,7 @@ class CustodyItemReturnAPI(APIView):
             custody_stock_instance.amount_collected -= total_amount
             custody_stock_instance.quantity -= quantity
             custody_stock_instance.save()
-            
+
             vanstock = VanProductStock.objects.get(created_date=datetime.today().date(),product=product,van__salesman=request.user)
             vanstock.return_count += quantity
             vanstock.save()
@@ -5421,10 +5426,10 @@ class CustodyItemReturnAPI(APIView):
             #     amount=invoice.amout_recieved,
             # )
                 
-            if item_intances.product.product_name == "5 Gallon":
+            if item_instance.product.product_name == "5 Gallon":
                 if (bottle_count:=BottleCount.objects.filter(van__salesman=request.user,created_date__date=custody_return_instance.created_date.date())).exists():
                     bottle_count = bottle_count.first()
-                    bottle_count.custody_issue += item_intances.quantity
+                    bottle_count.custody_issue += item_instance.quantity
                     bottle_count.save()
                     
             return Response({'status': True,'message': 'Created Successfully'},status=status.HTTP_200_OK)
