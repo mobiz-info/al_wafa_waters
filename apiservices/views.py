@@ -9739,26 +9739,50 @@ class VanOnloadAPIView(APIView):
                                     count=int(issued_count),
                                     van_stock=vanstock,
                                 )
+                                #------
+                                # Ensure VanProductStock record exists
+                                van_stock_instance, created = VanProductStock.objects.get_or_create(
+                                    created_date=order_item.staff_order_id.order_date,
+                                    product=order_item.product_id,
+                                    van=van_instance
+                                )
 
-                                if VanProductStock.objects.filter(created_date=order_item.staff_order_id.order_date, product=order_item.product_id, van=van_instance).exists():
-                                    van_product_stock = VanProductStock.objects.get(created_date=order_item.staff_order_id.order_date, product=order_item.product_id, van=van_instance)
-                                    van_product_stock.stock += int(issued_count)
-                                    van_product_stock.save()
+                                # If newly created, set stock to 0
+                                if created or van_stock_instance.stock is None:
+                                    van_stock_instance.stock = 0
+
+                                issued_count = int(order_product.get("issued_count"))
+
+                                # Allow issuing even if stock is zero
+                                van_stock_instance.stock += int(issued_count)
+                                van_stock_instance.save()
+
+                                # Log issued product
+                                VanProductItems.objects.create(
+                                    product=order_item.product_id,
+                                    count=issued_count,
+                                    van_stock=van_stock_instance,
+                                )
+
+                                # if VanProductStock.objects.filter(created_date=order_item.staff_order_id.order_date, product=order_item.product_id, van=van_instance).exists():
+                                #     van_product_stock = VanProductStock.objects.get(created_date=order_item.staff_order_id.order_date, product=order_item.product_id, van=van_instance)
+                                #     van_product_stock.stock += int(issued_count)
+                                #     van_product_stock.save()
 
 
-                                else:
-                                    van_product_stock = VanProductStock.objects.create(
-                                        created_date=order_item.staff_order_id.order_date,
-                                        product=order_item.product_id,
-                                        van=van_instance,
-                                        stock=int(issued_count)
-                                        )
+                                # else:
+                                #     van_product_stock = VanProductStock.objects.create(
+                                #         created_date=order_item.staff_order_id.order_date,
+                                #         product=order_item.product_id,
+                                #         van=van_instance,
+                                #         stock=int(issued_count)
+                                #         )
 
                                 order_item.issued_qty += int(issued_count)
                                 order_item.save()
                         
-                                van_stock_instance.stock += int(issued_count)
-                                van_stock_instance.save()
+                                # van_stock_instance.stock += int(issued_count)
+                                # van_stock_instance.save()
                                     
                     elif product_item_instance.category.category_name == "Coupons":
                         book_numbers = order_product.get('coupon_book_no')
