@@ -1014,7 +1014,7 @@ def excel_download(request, route_id, def_date, trip):
 
         # Merge cells and write other information with borders
         merge_format = workbook.add_format({'align': 'center', 'bold': True, 'font_size': 16, 'border': 1})
-        worksheet.merge_range('A1:N2', f'Al Wafa Water', merge_format)
+        worksheet.merge_range('A1:N2', f'Sana Water', merge_format)
         merge_format = workbook.add_format({'align': 'center', 'bold': True, 'border': 1})
         worksheet.merge_range('A3:D3', f'Route:    {route.route_name}    {trip}', merge_format)
         worksheet.merge_range('E3:I3', f'Date: {def_date}', merge_format)
@@ -2078,62 +2078,63 @@ def audit_report(request):
         audited_customers=Count('audit_details__customer', distinct=True)
     ).order_by('-start_date')
 
-    print(audits.query)
-
     return render(request, 'van_management/audit_report.html', {'audits': audits})
 
 def audit_detail(request, audit_id):
     audit = get_object_or_404(AuditBase, id=audit_id)
     audit_details = audit.audit_details.all()
 
-    audit_combined = []  
-    for audit_detail in audit_details:
-        customer = audit_detail.customer
-        date = audit.created_date
+    # audit_combined = []  
+    # for audit_detail in audit_details:
+    #     customer = audit_detail.customer
+    #     date = audit.created_date
 
-        current_amount = OutstandingAmount.objects.filter(
-            customer_outstanding__customer__pk=customer.pk, 
-            customer_outstanding__created_date__date__lte=date
-        ).aggregate(total_amount=Sum('amount'))['total_amount'] or 0
+    #     current_amount = OutstandingAmount.objects.filter(
+    #         customer_outstanding__customer__pk=customer.pk, 
+    #         customer_outstanding__created_date__date__lte=date
+    #     ).aggregate(total_amount=Sum('amount'))['total_amount'] or 0
 
-        collection_amount = CollectionPayment.objects.filter(
-            customer__pk=customer.pk, 
-            created_date__date__lte=date
-        ).aggregate(total_amount_received=Sum('amount_received'))['total_amount_received'] or 0
-
-        current_amount -= collection_amount
+    #     collection_amount = CollectionPayment.objects.filter(
+    #         customer__pk=customer.pk, 
+    #         created_date__date__lte=date
+    #     ).aggregate(total_amount_received=Sum('amount_received'))['total_amount_received'] or 0
         
-        current_bottles = OutstandingProduct.objects.filter(
-            customer_outstanding__customer=customer, 
-            customer_outstanding__created_date__lte=date
-        ).aggregate(total_bottles=Sum('empty_bottle'))['total_bottles'] or 0
+    #     print(current_amount)
+    #     print(collection_amount)
 
-        current_coupons = OutstandingCoupon.objects.filter(
-            customer_outstanding__customer=customer,
-            customer_outstanding__created_date__lte=date
-        ).aggregate(total_coupons=Sum('count'))['total_coupons'] or 0
+    #     current_amount -= collection_amount
+        
+    #     current_bottles = OutstandingProduct.objects.filter(
+    #         customer_outstanding__customer=customer, 
+    #         customer_outstanding__created_date__lte=date
+    #     ).aggregate(total_bottles=Sum('empty_bottle'))['total_bottles'] or 0
 
-        audit_amount = audit_detail.outstanding_amount or 0
-        audit_bottles = audit_detail.bottle_outstanding or 0
-        audit_coupons = audit_detail.outstanding_coupon or 0
+    #     current_coupons = OutstandingCoupon.objects.filter(
+    #         customer_outstanding__customer=customer,
+    #         customer_outstanding__created_date__lte=date
+    #     ).aggregate(total_coupons=Sum('count'))['total_coupons'] or 0
+
+    #     audit_amount = audit_detail.outstanding_amount or 0
+    #     audit_bottles = audit_detail.bottle_outstanding or 0
+    #     audit_coupons = audit_detail.outstanding_coupon or 0
+    #     print(audit_amount)
+    #     amount_variation = audit_amount - current_amount
+    #     bottle_variation = audit_bottles - current_bottles
+    #     coupon_variation = audit_coupons - current_coupons
         
-        amount_variation = current_amount - audit_amount
-        bottle_variation = current_bottles - audit_bottles
-        coupon_variation = current_coupons - audit_coupons
-        
-        audit_combined.append({
-            'customer': customer.customer_name,
-            'outstanding_amount': audit_amount,
-            'amount_variation': amount_variation,
-            'outstanding_coupon': audit_coupons,
-            'coupon_variation': coupon_variation,
-            'bottle_count': audit_bottles,
-            'bottle_variation': bottle_variation,
-        })
+    #     audit_combined.append({
+    #         'customer': customer.customer_name,
+    #         'outstanding_amount': audit_amount,
+    #         'amount_variation': amount_variation,
+    #         'outstanding_coupon': audit_coupons,
+    #         'coupon_variation': coupon_variation,
+    #         'bottle_count': audit_bottles,
+    #         'bottle_variation': bottle_variation,
+    #     })
 
     context = {
         'audit': audit,
-        'audit_combined': audit_combined,  
+        'audit_details': audit_details,  
     }
     
     return render(request, 'van_management/audit_detail.html', context)
@@ -2878,8 +2879,3 @@ def freelance_van_issue_list(request, van_id):
     }
     return render(request, "van_management/freelance_van_issue_list.html", context)
 
-def route_wise_bottle_count(request):
-    route_li = RouteMaster.objects.filter()
-    context = {'route_li': route_li}
-    
-    return render(request, "sales_management/route_wise_bottle_count.html", context)

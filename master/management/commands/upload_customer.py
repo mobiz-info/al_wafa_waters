@@ -15,7 +15,7 @@ from product.models import ProdutItemMaster
 from sales_management.models import CollectionPayment
 
 # Read the Excel file
-file_path = '/home/ra/Downloads/w-05 amir customer list.xlsx'
+file_path = '/home/ra/Downloads/S-14 ADD.xlsx'
 data = pd.read_excel(file_path)
 
 # Strip any leading/trailing whitespace from column names
@@ -38,10 +38,10 @@ def clean_value(value, default):
 
 @transaction.atomic
 def populate_models_from_excel(data):
-    user = CustomUser.objects.get(username="W-05")
-    route = RouteMaster.objects.get(route_name="W-05")
-    emirate = EmirateMaster.objects.get(name="Sharjah")
-    branch = BranchMaster.objects.get(name="test branch")
+    user = CustomUser.objects.get(username="S-14")
+    route = RouteMaster.objects.get(route_name="S-14")
+    emirate = EmirateMaster.objects.get(name="Dubai")
+    branch = BranchMaster.objects.get(name="Sana Water")
     # outstanding_in = CustomerOutstanding.objects.filter(customer__sales_staff=user,product_type='amount')
     # Invoice.objects.filter(customer__sales_staff=user).delete()
     # outstanding_in.delete()

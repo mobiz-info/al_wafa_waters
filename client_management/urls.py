@@ -100,5 +100,10 @@ urlpatterns = [
         #-----------------------------------------Audit---------------------------------------------
         path("select_executive/", MarketingExecutiveRoutesView.as_view(), name="select_executive"),
         path("audit_customer_list/<uuid:route_id>/", CustomerListView.as_view(), name="audit_customer_list"),
-        path("audit_details/<uuid:customer_id>/", AuditDetailsView.as_view(), name="audit_details")
+        path("audit_details/<uuid:customer_id>/", AuditDetailsView.as_view(), name="audit_details"),
+        
+        path("customer_custody_stock/", customer_custody_stock, name="customer_custody_stock"),
+        path('custody-item-return-pull/<uuid:stock_id>/', custody_item_return_view, name='custody_item_return_pull'),
+
+
 ]

@@ -17,7 +17,13 @@ class RouteMasterSerializer(serializers.ModelSerializer):
         
     def get_branch_name(self,obj):
         return obj.branch_id.name
-    
+
+
+class RouteSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = RouteExportStatus
+        fields = ['route', 'erp_route_id']
+            
     
 class BranchMasterSerializer(serializers.ModelSerializer):
     
@@ -25,13 +31,22 @@ class BranchMasterSerializer(serializers.ModelSerializer):
         model = BranchMaster
         fields = ['branch_id','name','address','mobile','landline','phone','fax','trn','website','emirate','email','user_id','logo']
         
-        
+    
+class BranchSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = BranchExportStatus
+        fields = ['branch', 'erp_branch_id']
+               
 class EmirateMasterSerializer(serializers.ModelSerializer):
     
     class Meta:
         model = EmirateMaster
         fields = ['emirate_id','name']
-        
+
+class EmirateSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = EmirateExportStatus
+        fields = ['emirate', 'erp_emirate_id']        
         
 class DesignationMasterSerializer(serializers.ModelSerializer):
     
@@ -39,6 +54,10 @@ class DesignationMasterSerializer(serializers.ModelSerializer):
         model = DesignationMaster
         fields = ['designation_id','designation_name']
         
+class DesignationSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = DesignationExportStatus
+        fields = ['designation', 'erp_designation_id']  
         
 class LocationMasterSerializer(serializers.ModelSerializer):
     emirate_name = serializers.SerializerMethodField()
@@ -51,13 +70,20 @@ class LocationMasterSerializer(serializers.ModelSerializer):
     def get_emirate_name(self, obj):
         return obj.emirate.name if obj.emirate else None
 
+class LocationSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = LocationExportStatus
+        fields = ['location', 'erp_location_id']
+        
 class CustomUserSerializer(serializers.ModelSerializer):
     full_name = serializers.SerializerMethodField()
+    route_name = serializers.SerializerMethodField()
+    salesman = serializers.SerializerMethodField()
 
     class Meta:
         model = CustomUser
         fields = [
-            'id', 'username', 'email', 'user_type', 'branch_id', 'designation_id', 'staff_id', 
+            'id', 'username', 'route_name', 'salesman', 'staff_id', 'full_name', 'email', 'user_type', 'branch_id', 'designation_id', 
             'phone', 'blood_group', 'permanent_address', 'present_address', 'labour_card_no', 
             'labour_card_expiry', 'driving_licence_no', 'driving_licence_expiry', 'licence_issued_by', 
             'visa_issued_by', 'visa_no', 'visa_expiry', 'emirates_id_no', 'emirates_expiry', 
@@ -65,50 +91,56 @@ class CustomUserSerializer(serializers.ModelSerializer):
             'insurance_no', 'insurance_expiry', 'insurance_company', 'user_management', 
             'product_management', 'masters', 'van_management', 'coupon_management', 
             'client_management', 'nationality', 'visa_type', 'joining_date', 'passport_expiry', 
-            'passport_number', 'full_name'
+            'passport_number'
         ]
 
     def get_full_name(self, obj):
         return f"{obj.first_name} {obj.last_name}" if obj.first_name and obj.last_name else obj.username
 
+    def get_route_name(self, obj):
+        van = Van.objects.filter(salesman=obj).first()
+        if van:
+            van_route = Van_Routes.objects.filter(van=van).first()
+            if van_route and van_route.routes:
+                return van_route.routes.route_name  # assuming RouteMaster has this field
+        return None
+
+    def get_salesman(self, obj):
+        return self.get_full_name(obj)
+
+    
+class CustomUserListSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = CustomUserExportStatus
+        fields = ['emp', 'erp_emp_id']
+
 class CustomersSerializer(serializers.ModelSerializer):
-    created_date = serializers.DateTimeField(format="%Y-%m-%d", read_only=True)
-    sales_staff_name = serializers.SerializerMethodField()
     routes_name = serializers.SerializerMethodField()
     location_name = serializers.SerializerMethodField()
     emirate_name = serializers.SerializerMethodField()
-    branch_name = serializers.SerializerMethodField()
 
     class Meta:
         model = Customers
         fields = [
-            'customer_id', 'created_date', 'created_by', 'custom_id', 'customer_name', 'building_name',
-            'door_house_no', 'floor_no', 'sales_staff', 'sales_staff_name', 'routes', 'routes_name', 'location', 'location_name',
-            'emirate', 'emirate_name', 'mobile_no', 'whats_app', 'email_id', 'gps_latitude', 'gps_longitude',
-            'customer_type', 'sales_type', 'no_of_bottles_required', 'max_credit_limit', 'credit_days',
-            'no_of_permitted_invoices', 'trn', 'billing_address', 'preferred_time', 'branch_id','branch_name', 'is_active',
-            'visit_schedule', 'is_editable', 'user_id', 'rate', 'coupon_count', 'five_g_count_limit',
-            'eligible_foc', 'is_calling_customer', 'is_deleted', 'gps_module_active'
+            'customer_id', 'custom_id', 'customer_name', 'building_name', 'door_house_no',
+            'mobile_no', 'email_id', 'routes_name', 'sales_type',
+            'no_of_bottles_required', 'emirate_name', 'location_name'
         ]
-    def get_sales_staff_name(self, obj):
-        return obj.sales_staff.get_fullname() if obj.sales_staff else None
-
 
     def get_routes_name(self, obj):
         return obj.routes.route_name if obj.routes else None
 
-
     def get_location_name(self, obj):
         return obj.location.location_name if obj.location else None
 
-
     def get_emirate_name(self, obj):
         return obj.emirate.name if obj.emirate else None
-    
-    def get_branch_name(self, obj):
-        return obj.branch_id.name if obj.branch_id else None
-    
-
+   
+class CustomerSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = CustomerExportStatus
+        fields = ['customer', 'erp_customer_id']
+        
 
 class ProdutItemMasterSerializer(serializers.ModelSerializer):
     class Meta:
@@ -116,6 +148,12 @@ class ProdutItemMasterSerializer(serializers.ModelSerializer):
         fields = [
             'id', 'product_name', 'category', 'unit', 'tax', 'rate', 'image'
         ] 
+
+class ProdutSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = ProductExportStatus
+        fields = ['product', 'erp_product_id']
+        
         
         
 class VanSerializers(serializers.ModelSerializer):
@@ -138,4 +176,7 @@ class VanSerializers(serializers.ModelSerializer):
     def get_van_route(self, obj):
         return obj.get_van_route()
     
-            
+class VansSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = VanExportStatus
+        fields = ['van', 'erp_van_id']

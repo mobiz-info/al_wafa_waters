@@ -155,5 +155,8 @@ urlpatterns = [
     path("scrap_clearance_print/", scrap_clearance_print, name="scrap_clearance_print"),
     path('scrap_clearance_to_excel/', scrap_clearance_to_excel, name='scrap_clearance_to_excel'),
 
+    path('route_wise_bottle_count/', route_wise_bottle_count, name='route_wise_bottle_count'),
+    path('custody_custom_list/', custody_custom_list, name='custody_custom_list'),
+    path('custody-custom/<uuid:custody_id>/', custody_custom_detail, name='custody_custom_detail'),
 
 ]
