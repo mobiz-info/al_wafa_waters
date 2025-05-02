@@ -51,7 +51,7 @@ def populate_models_from_excel(data):
     user = CustomUser.objects.get(username="S-14")
     route = RouteMaster.objects.get(route_name="S-14")
     emirate = EmirateMaster.objects.get(name="Dubai")
-    branch = BranchMaster.objects.get(name="Sana Water")
+    branch = BranchMaster.objects.get(name="Al Wafa Water")
 >>>>>>> 28859ee992a6218e8ee6df0cdd065b5ee98a9909
     # outstanding_in = CustomerOutstanding.objects.filter(customer__sales_staff=user,product_type='amount')
     # Invoice.objects.filter(customer__sales_staff=user).delete()
