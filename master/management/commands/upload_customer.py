@@ -1,6 +1,6 @@
 import random
 import math
-from datetime import datetime
+from datetime import date, datetime
 from django.utils import timezone
 from django.db import transaction
 from django.contrib.auth.hashers import make_password
@@ -9,13 +9,13 @@ from decimal import Decimal
 from accounts.models import CustomUser, Customers
 from client_management.models import CustodyCustom, CustodyCustomItems, CustomerOutstanding, OutstandingAmount, CustomerOutstandingReport
 from invoice_management.models import Invoice, InvoiceItems
-from master.functions import get_custom_id
+from master.functions import generate_invoice_no, get_custom_id
 from master.models import BranchMaster, EmirateMaster, LocationMaster, RouteMaster
 from product.models import ProdutItemMaster
 from sales_management.models import CollectionPayment
 
 # Read the Excel file
-file_path = '/home/ra/Downloads/w-05 amir customer list.xlsx'
+file_path = '/home/ra/Downloads/W-06 software.xlsx'
 data = pd.read_excel(file_path)
 
 # Strip any leading/trailing whitespace from column names
@@ -38,9 +38,9 @@ def clean_value(value, default):
 
 @transaction.atomic
 def populate_models_from_excel(data):
-    user = CustomUser.objects.get(username="W-05")
-    route = RouteMaster.objects.get(route_name="W-05")
-    emirate = EmirateMaster.objects.get(name="Sharjah")
+    user = CustomUser.objects.get(username="W-06")
+    route = RouteMaster.objects.get(route_name="W-06")
+    emirate = EmirateMaster.objects.get(name="Dubai")
     branch = BranchMaster.objects.get(name="test branch")
     # outstanding_in = CustomerOutstanding.objects.filter(customer__sales_staff=user,product_type='amount')
     # Invoice.objects.filter(customer__sales_staff=user).delete()
@@ -61,6 +61,7 @@ def populate_models_from_excel(data):
         bottle_rate = Decimal(clean_value(row['bottle_rate'], 0))  # Handle NaN and convert to Decimal
         custody_count = Decimal(clean_value(row['custody_count'], 0))  # Handle NaN and convert to Decimal
         day_of_supply = clean_value(row['day_of_supply'], "")
+        outstanding_amount = Decimal(clean_value(row['outstanding'], 0))  # Handle NaN and convert to Decimal
         
         print(type(phone_no),phone_no)
         
@@ -89,7 +90,9 @@ def populate_models_from_excel(data):
                     username=phone_no,
                     password = make_password(str(phone_no))
                     )
-                
+        
+        visit_schedule = ""
+        
         if day_of_supply.lower() == "sunday":
             visit_schedule = {"Friday": [], "Monday": [], "Sunday": ["Week1", "Week2", "Week3", "Week4", "Week5"], "Tuesday": [], "Saturday": [], "Thursday": [], "Wednesday": []}
         if day_of_supply.lower() == "monday":
@@ -149,6 +152,60 @@ def populate_models_from_excel(data):
             amount=0,
             can_deposite_chrge=0,
             five_gallon_water_charge=customer_instance.rate,
+        )
+        
+        customer_outstanding = CustomerOutstanding.objects.create(
+            customer=customer_instance,
+            product_type='amount',
+            created_by=user.id,
+            modified_by=user.id,
+            created_date=customer_instance.created_date,
+        )
+
+        # Create OutstandingAmount
+        outstanding_amount_instance = OutstandingAmount.objects.create(
+            customer_outstanding=customer_outstanding,
+            amount=outstanding_amount
+        )
+
+        # Update or create CustomerOutstandingReport
+        if (instances:=CustomerOutstandingReport.objects.filter(customer=customer_instance,product_type='amount')).exists():
+            report = instances.first()
+        else:
+            report = CustomerOutstandingReport.objects.create(customer=customer_instance,product_type='amount')
+
+        report.value += outstanding_amount
+        report.save()
+                
+        # Create the invoice
+        invoice = Invoice.objects.create(
+            invoice_no=generate_invoice_no(outstanding_amount_instance.customer_outstanding.created_date.date()),
+            created_date=outstanding_amount_instance.customer_outstanding.created_date,
+            net_taxable=outstanding_amount_instance.amount,
+            vat=0,
+            discount=0,
+            amout_total=outstanding_amount_instance.amount,
+            amout_recieved=0,
+            customer=outstanding_amount_instance.customer_outstanding.customer,
+            reference_no=f"custom_id{outstanding_amount_instance.customer_outstanding.customer.custom_id}"
+        )
+        customer_outstanding.invoice_no = invoice.invoice_no
+        customer_outstanding.save()
+        
+        if outstanding_amount_instance.customer_outstanding.customer.sales_type == "CREDIT":
+            invoice.invoice_type = "credit_invoive"
+            invoice.save()
+
+        # Create invoice items
+        item = ProdutItemMaster.objects.get(product_name="5 Gallon")
+        water_rate = outstanding_amount_instance.customer_outstanding.customer.get_water_rate()
+        InvoiceItems.objects.create(
+            category=item.category,
+            product_items=item,
+            qty=0,
+            rate=water_rate,
+            invoice=invoice,
+            remarks='invoice genereted from backend reference no : ' + invoice.reference_no
         )
 
         print(f"Processed row {index + 1} for customer {customer_id}")

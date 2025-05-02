@@ -1586,6 +1586,9 @@ class Customer_API(APIView):
                 )
                 return Response(serializer.data, status=status.HTTP_200_OK)
             queryset = Customers.objects.filter(is_deleted=False)
+            if (van_routes:=Van_Routes.objects.filter(van__salesman=request.user)).exists():
+                route_ids = van_routes.values_list("routes__pk")
+                queryset = queryset.filter(routes__pk__in=route_ids)
             serializer = CustomersSerializers(queryset, many=True)
             log_activity(
                 created_by=request.user.id,
@@ -7106,7 +7109,7 @@ class NextVisitDateAPI(APIView):
     def get(self, request):
         try:
             customer = Customers.objects.get(user_id=request.user)
-            if not customer.visit_schedule is None:
+            if not customer.visit_schedule and not customer.visit_schedule is None:
                 next_visit_date = get_next_visit_date(customer.visit_schedule)
             
             return Response({
