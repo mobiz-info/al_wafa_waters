@@ -48,6 +48,7 @@ class Van(models.Model):
     salesman = models.ForeignKey('accounts.CustomUser', on_delete=models.SET_NULL, null=True, blank=True,related_name='salesman_van')
     branch_id = models.ForeignKey('master.BranchMaster', on_delete=models.SET_NULL, null=True, blank=True,related_name='van_branch')
     van_type = models.CharField(max_length=10, choices=VAN_TYPE_CHOICES, default='company')
+    is_exported = models.BooleanField(default=False)
 
     class Meta:
         ordering = ('van_make',)
@@ -76,7 +77,20 @@ class Van(models.Model):
         if van_route and van_route.routes:
             return van_route.routes.route_name
         return "No Route Assigned"
+
+
+class VanExportStatus(models.Model):
+    van = models.ForeignKey(Van, on_delete=models.CASCADE, related_name='van_export_status')
+    erp_van_id = models.CharField(max_length=50, unique=True)
+    exported_date = models.DateTimeField(auto_now_add=True)  
     
+    class Meta:
+        ordering = ('-exported_date',)
+
+    def __str__(self):
+        return f"Exported {self.van.van_make} with ERP ID {self.erp_van_id}"  
+    
+        
 class Van_Routes(models.Model):
     van_route_id= models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     created_by = models.CharField(max_length=20,  blank=True)
@@ -641,12 +655,26 @@ class AuditDetails(models.Model):
     audit_base = models.ForeignKey(AuditBase, on_delete=models.CASCADE, related_name='audit_details')
     customer    = models.ForeignKey(Customers, on_delete=models.CASCADE)
     
+    previous_outstanding_amount = models.DecimalField(max_digits=10, decimal_places=2, default=0)
     outstanding_amount = models.DecimalField(max_digits=10, decimal_places=2, default=0)
+    
+    previous_bottle_outstanding = models.IntegerField(default=0)
     bottle_outstanding = models.IntegerField(default=0)
+    
+    previous_outstanding_coupon = models.IntegerField(default=0)
     outstanding_coupon = models.IntegerField(default=0)
 
     def __str__(self):
         return f"Audit Detail - {self.customer.customer_name} (Audit {self.audit_base.id})"
+    
+    def get_amount_variation(self):
+        return self.previous_outstanding_amount - self.outstanding_amount
+    
+    def get_bottle_variation(self):
+        return self.previous_bottle_outstanding - self.bottle_outstanding
+    
+    def get_coupon_variation(self):
+        return self.previous_outstanding_coupon - self.outstanding_coupon
     
     
 class FreelanceVehicleRateChange(models.Model):

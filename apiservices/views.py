@@ -3494,13 +3494,17 @@ class GetProductAPI(APIView):
 
     def get(self, request, *args, **kwargs):
         try:
-            product_names = ["5 Gallon", "Hot and  Cool", "Dispenser"]
-            product_items = ProdutItemMaster.objects.filter(product_name__in=product_names)
+            # product_names = ["5 Gallon", "Hot and  Cool", "Dispenser"]
+            product_categories = ["Dispenser", "Water"]
+            product_items = ProdutItemMaster.objects.filter(
+                # product_name__in=product_names,
+                category__category_name__in=product_categories 
+                )
             # print('product_items',product_items)
             serializer = ProdutItemMasterSerializerr(product_items, many=True)
             log_activity(
                 created_by=request.user,
-                description="Fetched product list including: " + ", ".join(product_names)
+                description="Fetched product list including: " + ", ".join(product_categories)
             )          
             return Response({"products": serializer.data}, status=status.HTTP_200_OK)
 
@@ -3723,7 +3727,7 @@ class CustodyCustomAPIView(APIView):
                     amount_received = amount_collected
 
                     invoice_instance = Invoice.objects.create(
-                        invoice_no=generate_invoice_no(datetime.datetime.today().date()),
+                        invoice_no=generate_invoice_no(datetime.today().date()),
                         created_date=datetime.today(),
                         net_taxable=net_taxable,
                         discount=discount,
@@ -7402,7 +7406,7 @@ class CustomerCartAPIView(APIView):
     def get(self, request, *args, **kwargs):
         response_data = {}
         if CustomerCart.objects.filter(customer__user_id=request.user,order_status=False).exists():
-            instance = CustomerCart.objects.get(customer__user_id=request.user,order_status=False)
+            instance = CustomerCart.objects.filter(customer__user_id=request.user,order_status=False).latest('created_date')
             serializer = CustomerCartSerializer(instance, many=False, context={'customer_pk': Customers.objects.get(user_id__pk=request.user.pk).customer_id})
         
             response_data = {
@@ -7425,11 +7429,14 @@ class CustomerCartAPIView(APIView):
         cart_data = request.data
 
         cart_serializer = CustomerCartPostSerializer(data=cart_data)
+        print(cart_serializer)
 
         if cart_serializer.is_valid():
-            if (cart_instances := CustomerCart.objects.filter(customer__user_id=request.user, order_status=False)).exists():
+            if (cart_instances := CustomerCart.objects.filter(customer__user_id=request.user, delivery_date = cart_serializer.validated_data.get("delivery_date"),order_status=False)).exists():
+                print("iif")
                 cart_instance = cart_instances.latest('-created_date')
             else:
+                print("else")
                 cart_instance = cart_serializer.save(
                     customer=customer,
                     created_by=customer.pk,
@@ -7448,11 +7455,15 @@ class CustomerCartAPIView(APIView):
                         customer_cart=cart_instance
                         )
                     cart_item_instance.price = cart_item_instance.price / cart_item_instance.quantity
-                    cart_item_instance.total_amount = cart_item_instance.quantity * cart_item_instance.price
+                    cart_item_instance.total_amount = item["quantity"] * cart_item_instance.price
                     cart_item_instance.save()
-
-                    cart_instance.grand_total += cart_item_instance.total_amount
+                    cart_instance.grand_total = sum(i.total_amount for i in cart_instance.customercartitems_set.all())  
                     cart_instance.save()
+
+
+                    # cart_instance.grand_total = sum(item.total_amount for item in cart_instance.items.all())
+                    # cart_instance.save()
+
                 else:
                     return Response({
                         "statusCode": status.HTTP_400_BAD_REQUEST,
@@ -7684,10 +7695,14 @@ class ProductCreateAPIView(APIView):
 class DispensersAndCoolersPurchasesAPIView(APIView):
     authentication_classes = [BasicAuthentication]
     permission_classes = [IsAuthenticated]
-    
+
     def get(self, request, *args, **kwargs):
-        products = CustomerOrders.objects.filter(customer__user_id=request.user,product__product_name__in=['Hot and Cool', 'Dispenser'])
-        serializer = CustomerOrderssSerializer(products, many=True)
+        supplies = CustomerSupply.objects.filter(
+            customer__user_id=request.user.id,
+            customersupplyitems__product__category__category_name__in=['Hot and Cool', 'Dispenser']
+        ).distinct()
+
+        serializer = DispenserCoolerPurchaseSerializer(supplies, many=True)
         return Response(serializer.data, status=status.HTTP_200_OK)
     
 class CustomerCouponPurchaseView(APIView):
@@ -7695,24 +7710,38 @@ class CustomerCouponPurchaseView(APIView):
     permission_classes = [IsAuthenticated]
 
     def get(self, request, *args, **kwargs):
-        coupon_category_products = ProdutItemMaster.objects.filter(category__category_name='Coupons')
-        # print("coupon_category_products",coupon_category_products)
-        coupon_product_ids = coupon_category_products.values_list('id', flat=True)
-        # print("coupon_product_ids",coupon_product_ids)
-        customer_orders = CustomerOrders.objects.filter(customer__user_id=request.user,product__in=coupon_product_ids)
-        print("customer_orders",customer_orders)
+        supplies = CustomerSupply.objects.filter(
+            customer__user_id=request.user.id
+        ).distinct()
+        
+        supplies = supplies.filter(customer__sales_type='CASH COUPON')
 
-        serializer = CustomerCouponPurchaseSerializer(customer_orders, many=True)
-        return Response(serializer.data, status=status.HTTP_200_OK)    
+        # Check if any supplies were found
+        if not supplies.exists():
+            return Response({"detail": "No coupon purchases found."}, status=status.HTTP_404_NOT_FOUND)
+        
+        serializer = CustomerCouponPurchaseSerializer(supplies, many=True)
+        return Response(serializer.data, status=status.HTTP_200_OK)
 
 
 class WaterBottlePurchaseAPIView(APIView):
     authentication_classes = [BasicAuthentication]
     permission_classes = [IsAuthenticated]
-    
+
     def get(self, request, *args, **kwargs):
-        products = CustomerOrders.objects.filter(customer__user_id=request.user.id, product__category__category_name='Water')
-        serializer = WaterCustomerOrderSerializer(products, many=True)
+        user_id = request.user.id
+        supplies = CustomerSupply.objects.filter(
+            customer__user_id=user_id,
+            customersupplyitems__product__category__category_name="Water"
+        ).distinct()
+
+        # Filter out supplies with any manual or digital coupons
+        supplies = [s for s in supplies if not (
+            s.total_coupon_recieved()['manual_coupon'] > 0 or
+            s.total_coupon_recieved()['digital_coupon'] > 0
+        )]
+
+        serializer = WaterBottlePurchaseSerializer(supplies, many=True)
         return Response(serializer.data, status=status.HTTP_200_OK)
     
 class CustodyCustomerView(APIView):
@@ -12241,11 +12270,118 @@ class AuditListAPIView(APIView):
         serializer = AuditBaseSerializer(queryset, many=True)
         return Response(serializer.data, status=status.HTTP_200_OK)
 
+# class StartAuditAPIView(APIView):
+#     permission_classes = [IsAuthenticated]
+
+#     def post(self, request):
+#         user = request.user
+
+#         if user.user_type != 'marketing_executive':
+#             log_activity(
+#                 created_by=user,
+#                 description="Unauthorized attempt to start an audit."
+#             )
+#             return Response(
+#                 {"error": "User is not authorized to start audits."},
+#                 status=status.HTTP_403_FORBIDDEN
+#             )
+
+#         assigned_routes = Van_Routes.objects.filter(
+#             van__salesman=user
+#         ).values_list('routes__route_id', flat=True)
+
+#         if not assigned_routes:
+#             return Response(
+#                 {"error": "No assigned routes found."},
+#                 status=status.HTTP_404_NOT_FOUND
+#             )
+
+#         salesmen = CustomUser.objects.filter(
+#             user_type='Salesman',
+#             salesman_van__van_master__routes__route_id__in=assigned_routes
+#         ).distinct()
+
+#         if not salesmen:
+#             return Response(
+#                 {"error": "No salesmen found under this marketing executive."},
+#                 status=status.HTTP_404_NOT_FOUND
+#             )
+
+#         audit_data = []
+#         audit_started = False
+
+#         for salesman in salesmen:
+#             assigned_route = Van_Routes.objects.filter(
+#                 van__salesman=salesman
+#             ).first() 
+
+#             if not assigned_route:
+#                 return Response(
+#                     {"error": f"No route assigned to salesman {salesman.username}."},
+#                     status=status.HTTP_404_NOT_FOUND
+#                 )
+
+
+#             route_master = RouteMaster.objects.get(route_id=assigned_route.routes.route_id)
+
+#             audit = AuditBase.objects.filter(
+#                 marketing_executieve=user,
+#                 salesman=salesman,
+#                 route=route_master,
+#                 end_date__isnull=True 
+#             ).first()
+
+#             if audit:
+#                 audit_status = "Already in progress"
+#             else:
+#                 audit = AuditBase.objects.create(
+#                     marketing_executieve=user,
+#                     salesman=salesman,
+#                     route=route_master,
+#                     start_date=now(),
+#                     end_date=None
+#                 )
+#                 audit_status = "Started"
+#                 audit_started = True
+
+#             audit_data.append({
+#                 "audit_id": audit.id,
+#                 "audit_status": audit_status,
+#                 "salesman": {
+#                     "id": salesman.id,
+#                     "username": salesman.username,
+#                     "full_name": salesman.get_full_name(),
+#                 },
+#                 "route": {
+#                     "id": str(route_master.route_id),
+#                     "name": route_master.route_name
+#                 }
+                
+#             })
+            
+#         if audit_started:
+#             message = "Audit started successfully."
+#         else:
+#             message = "Audit already in progress."
+            
+#         log_activity(
+#             created_by=user,
+#             description=f"Audit started successfully for {len(audit_data)} salesmen."
+#         )
+
+#         return Response(
+#             {
+#                 "message": message,
+#                 "audit_details": audit_data
+#             },
+#             status=status.HTTP_200_OK
+#         )
 class StartAuditAPIView(APIView):
     permission_classes = [IsAuthenticated]
 
     def post(self, request):
         user = request.user
+        route_id = request.data.get("route_id")
 
         if user.user_type != 'marketing_executive':
             log_activity(
@@ -12257,65 +12393,68 @@ class StartAuditAPIView(APIView):
                 status=status.HTTP_403_FORBIDDEN
             )
 
-        assigned_routes = Van_Routes.objects.filter(
+        if not route_id:
+            return Response(
+                {"error": "Route ID is required."},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        # Check if the route is assigned under the marketing executive
+        is_assigned = Van_Routes.objects.filter(
             van__salesman=user
         ).values_list('routes__route_id', flat=True)
 
-        if not assigned_routes:
+        if not is_assigned:
             return Response(
-                {"error": "No assigned routes found."},
+                {"error": "This route is not assigned under your supervision."},
+                status=status.HTTP_403_FORBIDDEN
+            )
+
+        try:
+            route_master = RouteMaster.objects.get(route_id=route_id)
+        except RouteMaster.DoesNotExist:
+            return Response(
+                {"error": "Invalid route ID."},
                 status=status.HTTP_404_NOT_FOUND
             )
 
-        salesmen = CustomUser.objects.filter(
-            user_type='Salesman',
-            salesman_van__van_master__routes__route_id__in=assigned_routes
-        ).distinct()
+        # Get the salesman assigned to this route
+        van_route = Van_Routes.objects.filter(routes__route_id=route_id).first()
+        salesman = van_route.van.salesman if van_route else None
 
-        if not salesmen:
+        if not salesman:
             return Response(
-                {"error": "No salesmen found under this marketing executive."},
+                {"error": "No salesman assigned to this route."},
                 status=status.HTTP_404_NOT_FOUND
             )
 
-        audit_data = []
-        audit_started = False
+        # Check if audit already exists
+        audit = AuditBase.objects.filter(
+            marketing_executieve=user,
+            salesman=salesman,
+            route=route_master,
+            end_date__isnull=True
+        ).first()
 
-        for salesman in salesmen:
-            assigned_route = Van_Routes.objects.filter(
-                van__salesman=salesman
-            ).first() 
-
-            if not assigned_route:
-                return Response(
-                    {"error": f"No route assigned to salesman {salesman.username}."},
-                    status=status.HTTP_404_NOT_FOUND
-                )
-
-
-            route_master = RouteMaster.objects.get(route_id=assigned_route.routes.route_id)
-
-            audit = AuditBase.objects.filter(
+        if audit:
+            audit_status = "Already in progress"
+        else:
+            audit = AuditBase.objects.create(
                 marketing_executieve=user,
                 salesman=salesman,
                 route=route_master,
-                end_date__isnull=True 
-            ).first()
+                start_date=now()
+            )
+            audit_status = "Started"
 
-            if audit:
-                audit_status = "Already in progress"
-            else:
-                audit = AuditBase.objects.create(
-                    marketing_executieve=user,
-                    salesman=salesman,
-                    route=route_master,
-                    start_date=now(),
-                    end_date=None
-                )
-                audit_status = "Started"
-                audit_started = True
+        log_activity(
+            created_by=user,
+            description=f"Audit {audit_status.lower()} for route {route_master.route_name}."
+        )
 
-            audit_data.append({
+        return Response({
+            "message": f"Audit {audit_status.lower()} successfully.",
+            "audit_details": {
                 "audit_id": audit.id,
                 "audit_status": audit_status,
                 "salesman": {
@@ -12327,106 +12466,9 @@ class StartAuditAPIView(APIView):
                     "id": str(route_master.route_id),
                     "name": route_master.route_name
                 }
-                
-            })
-            
-        if audit_started:
-            message = "Audit started successfully."
-        else:
-            message = "Audit already in progress."
-            
-        log_activity(
-            created_by=user,
-            description=f"Audit started successfully for {len(audit_data)} salesmen."
-        )
-
-        return Response(
-            {
-                "message": message,
-                "audit_details": audit_data
-            },
-            status=status.HTTP_200_OK
-        )
-    # def post(self, request):
-    #     user = request.user
-
-    #     # Ensure the user is a marketing executive
-    #     if user.user_type != 'marketing_executive':
-    #         log_activity(
-    #             created_by=user,
-    #             description="Unauthorized attempt to start an audit."
-    #         )
-    #         return Response(
-    #             {"error": "User is not authorized to start audits."},
-    #             status=status.HTTP_403_FORBIDDEN
-    #         )
-
-    #     # Get assigned routes for the marketing executive
-    #     assigned_routes = Van_Routes.objects.filter(
-    #         van__salesman=user
-    #     ).values_list('routes__route_id', flat=True)
-    #     print("assigned_routes", assigned_routes)
-
-    #     # Fetch salesmen who are assigned to these routes, picking only the first route for each salesman
-    #     salesmen = CustomUser.objects.filter(
-    #         user_type='Salesman',
-    #         salesman_van__van_master__routes__route_id__in=assigned_routes
-    #     ).distinct()
-
-    #     print("salesmen", salesmen)
-
-    #     if not salesmen:
-    #         return Response(
-    #             {"error": "No salesmen found under this marketing executive."},
-    #             status=status.HTTP_404_NOT_FOUND
-    #         )
-
-    #     # Start audits for each salesman
-    #     for salesman in salesmen:
-    #         # Get the first route assigned to the salesman
-    #         assigned_route = Van_Routes.objects.filter(
-    #             van__salesman=salesman
-    #         ).first()  # Get the first route for the salesman
-
-    #         if not assigned_route:
-    #             return Response(
-    #                 {"error": f"No route assigned to salesman {salesman.username}."},
-    #                 status=status.HTTP_404_NOT_FOUND
-    #             )
-
-    #         # Get the RouteMaster instance using the route_id (UUID)
-    #         route_master = RouteMaster.objects.get(route_id=assigned_route.routes.route_id)
-
-    #         # Check if there's already an audit in progress for this salesman on the route
-    #         audit, created = AuditBase.objects.get_or_create(
-    #             marketing_executieve=user,  # Corrected field name
-    #             salesman=salesman,
-    #             route=route_master,  # Use the RouteMaster instance here
-    #             defaults={'start_date': now()}
-    #         )
-
-    #         # If the audit already exists and is in progress, return a message
-    #         if not created and audit.start_date is not None and audit.end_date is None:
-    #             return Response(
-    #                 {"message": f"Audit already in progress for salesman {salesman.username} on route {assigned_route.routes.route_id}"},
-    #                 status=status.HTTP_400_BAD_REQUEST
-    #             )
-
-    #         # If no audit exists, start a new one
-    #         audit.start_date = now()
-    #         audit.end_date = None
-    #         audit.save()
-
-    #     log_activity(
-    #         created_by=user,
-    #         description=f"Audit started successfully for {salesmen.count()} salesmen."
-    #     )
-
-    #     return Response(
-    #         {"message": "Audit started successfully for all assigned salesmen."},
-    #         status=status.HTTP_200_OK
-    #     )
-        
+            }
+        }, status=status.HTTP_200_OK)
+   
 class EndAuditAPIView(APIView):
     permission_classes = [IsAuthenticated]
 
@@ -12434,14 +12476,196 @@ class EndAuditAPIView(APIView):
         user = request.user
 
         try:
-            audit = AuditBase.objects.get(id=audit_id, marketing_executieve=user)
+            with transaction.atomic():
+                audit = AuditBase.objects.get(id=audit_id, marketing_executieve=user)
 
-            if audit.end_date is not None:
-                return Response({"message": "Audit is already ended"}, status=status.HTTP_400_BAD_REQUEST)
+                if audit.end_date is not None:
+                    return Response({"message": "Audit is already ended"}, status=status.HTTP_400_BAD_REQUEST)
 
-            audit.end_date = now()
-            audit.save()
-            return Response({"message": "Audit ended successfully"}, status=status.HTTP_200_OK)
+                audit.end_date = now()
+                audit.save()
+                
+                audit_details_instances = AuditDetails.objects.filter(audit_base=audit)
+                
+                if audit_details_instances.exists():
+                    for audit_detail in audit_details_instances:
+                        
+                        # if audit_detail.outstanding_amount > 0:
+                        # outstanding amount audit
+                        outstanding_amount = OutstandingAmount.objects.filter(
+                            customer_outstanding__customer=audit_detail.customer, 
+                            customer_outstanding__created_date__date__lte=audit.start_date.date()
+                        ).aggregate(total_amount=Sum('amount'))['total_amount'] or 0
+                        
+                        collection_amount = CollectionPayment.objects.filter(
+                            customer=audit_detail.customer, 
+                            created_date__date__lte=audit.start_date.date()
+                        ).aggregate(total_amount_received=Sum('amount_received'))['total_amount_received'] or 0
+                        outstanding_amount = outstanding_amount - collection_amount
+                        
+                        audit_variation_amount = audit_detail.outstanding_amount - outstanding_amount
+                        
+                        # print(f"outstanding_amount {outstanding_amount}")
+                        # print(f"collection_amount {collection_amount}")
+                        # print(f"audit_variation_amount {audit_variation_amount}")
+                        
+                        if (audit_variation_amount != 0) and (outstanding_amount != audit_detail.outstanding_amount):
+                            
+                            customer_outstanding_amount = CustomerOutstanding.objects.create(
+                                product_type="amount",
+                                created_by=request.user.id,
+                                customer=audit_detail.customer,
+                                created_date=datetime.today()
+                            )
+
+                            outstanding_amount_instance = OutstandingAmount.objects.create(
+                                amount=audit_variation_amount,
+                                customer_outstanding=customer_outstanding_amount,
+                            )
+
+                            try:
+                                outstanding_instance=CustomerOutstandingReport.objects.get(customer=audit_detail.customer,product_type="amount")
+                                outstanding_instance.value += Decimal(outstanding_amount_instance.amount)
+                                outstanding_instance.save()
+                            except:
+                                outstanding_instance = CustomerOutstandingReport.objects.create(
+                                    product_type='amount',
+                                    value=outstanding_amount_instance.amount,
+                                    customer=outstanding_amount_instance.customer_outstanding.customer
+                                )
+                                
+                            # Create the invoice
+                            invoice = Invoice.objects.create(
+                                invoice_no=generate_invoice_no(datetime.today().date()),
+                                created_date=datetime.today(),
+                                net_taxable=audit_variation_amount,
+                                vat=0,
+                                discount=0,
+                                amout_total=audit_variation_amount,
+                                amout_recieved=0,
+                                customer=audit_detail.customer,
+                                reference_no="invoice generated from audit"
+                            )
+                            customer_outstanding_amount.invoice_no=invoice.invoice_no
+                            customer_outstanding_amount.save()
+                            
+                            if audit_detail.customer.sales_type == "CREDIT":
+                                invoice.invoice_type = "credit_invoive"
+                                invoice.save()
+
+                            # Create invoice items
+                            item = ProdutItemMaster.objects.get(product_name="5 Gallon")
+                            InvoiceItems.objects.create(
+                                category=item.category,
+                                product_items=item,
+                                qty=0,
+                                rate=audit_detail.customer.rate or item.rate,
+                                invoice=invoice,
+                                remarks="invoice generated from audit"
+                            )
+                            # else:
+                            #     # Create the invoice
+                            #     invoice = Invoice.objects.create(
+                            #         invoice_no=generate_invoice_no(datetime.today().date()),
+                            #         created_date=datetime.today(),
+                            #         net_taxable=audit_variation_amount,
+                            #         vat=0,
+                            #         discount=0,
+                            #         amout_total=audit_variation_amount,
+                            #         amout_recieved=0,
+                            #         customer=audit_detail.customer,
+                            #         reference_no="invoice generated from audit"
+                            #     )
+                                
+                            #     if audit_detail.customer.sales_type == "CREDIT":
+                            #         invoice.invoice_type = "credit_invoive"
+                            #         invoice.save()
+
+                            #     # Create invoice items
+                            #     item = ProdutItemMaster.objects.get(product_name="5 Gallon")
+                            #     InvoiceItems.objects.create(
+                            #         category=item.category,
+                            #         product_items=item,
+                            #         qty=0,
+                            #         rate=audit_detail.customer.rate or item.rate,
+                            #         invoice=invoice,
+                            #         remarks="invoice generated from audit"
+                            #     )
+                                
+                        if audit_detail.bottle_outstanding != 0 :
+                            # outstanding bottle audit
+                            total_bottles = OutstandingProduct.objects.filter(
+                                customer_outstanding__customer=audit_detail.customer, 
+                                customer_outstanding__created_date__date__lte=audit.start_date.date()
+                            ).aggregate(total_bottles=Sum('empty_bottle'))['total_bottles'] or 0
+                            
+                            audit_variation_bottle_count = audit_detail.bottle_outstanding - total_bottles
+                            
+                            if total_bottles != audit_detail.bottle_outstanding:
+                                customer_outstanding_empty_can = CustomerOutstanding.objects.create(
+                                    customer=audit_detail.customer,
+                                    product_type="emptycan",
+                                    created_by=request.user.id,
+                                    created_date=datetime.today(),
+                                )
+
+                                outstanding_product = OutstandingProduct.objects.create(
+                                    empty_bottle=audit_variation_bottle_count,
+                                    customer_outstanding=customer_outstanding_empty_can,
+                                )
+
+                                try:
+                                    outstanding_instance=CustomerOutstandingReport.objects.get(customer=audit_detail.customer,product_type="emptycan")
+                                    outstanding_instance.value += Decimal(outstanding_product.empty_bottle)
+                                    outstanding_instance.save()
+                                except:
+                                    outstanding_instance = CustomerOutstandingReport.objects.create(
+                                        product_type='emptycan',
+                                        value=outstanding_product.empty_bottle,
+                                        customer=outstanding_product.customer_outstanding.customer
+                                    )
+                                
+                        if audit_detail.outstanding_coupon != 0:
+
+                            # outstanding coupon audit
+                            total_coupons = OutstandingCoupon.objects.filter(
+                                customer_outstanding__customer=audit_detail.customer,
+                                customer_outstanding__created_date__date__lte=audit.start_date.date()
+                            ).aggregate(total_coupons=Sum('count'))['total_coupons'] or 0
+                            
+                            if total_coupons != audit_detail.outstanding_coupon:
+                            
+                                audit_variation_coupon_count = audit_detail.outstanding_coupon - total_coupons
+                                if (last_recharge_coupon_type:=CustomerCouponItems.objects.filter(customer_coupon__customer=audit_detail.customer)).exists():
+                                    last_recharge_coupon_type = last_recharge_coupon_type.latest('customer_coupon__created_date').coupon.coupon_type
+                                else:
+                                    last_recharge_coupon_type = CouponType.objects.get(coupon_type_name="Digital")
+                                    
+                                customer_outstanding_coupon = CustomerOutstanding.objects.create(
+                                    customer=audit_detail.customer,
+                                    product_type="coupons",
+                                    created_by=request.user.id,
+                                    created_date=datetime.today()
+                                )
+                                
+                                outstanding_coupon = OutstandingCoupon.objects.create(
+                                    count=audit_variation_coupon_count,
+                                    customer_outstanding=customer_outstanding_coupon,
+                                    coupon_type=last_recharge_coupon_type
+                                )
+                                
+                                try :
+                                    outstanding_instance=CustomerOutstandingReport.objects.get(customer=audit_detail.customer,product_type="coupons")
+                                    outstanding_instance.value += Decimal(audit_variation_coupon_count)
+                                    outstanding_instance.save()
+                                except:
+                                    outstanding_instance=CustomerOutstandingReport.objects.create(
+                                        product_type="coupons",
+                                        value=audit_variation_coupon_count,
+                                        customer=audit_detail.customer,
+                                        )
+                        
+                return Response({"message": "Audit ended successfully"}, status=status.HTTP_200_OK)
 
         except AuditBase.DoesNotExist:
             return Response({"error": "Audit not found"}, status=status.HTTP_404_NOT_FOUND)
@@ -12466,6 +12690,7 @@ class CreateAuditDetailAPIView(APIView):
             serializer = AuditDetailSerializer(data=customer_data, many=True)
             if serializer.is_valid():
                 serializer.save()
+                
                 return Response({"message": "Audit details added successfully", "data": serializer.data}, status=status.HTTP_201_CREATED)
             return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 

@@ -8,6 +8,7 @@ from master.functions import get_next_visit_date
 from client_management.models import *
 from master.models import *
 from van_management.models import *
+from van_management.views import find_customers
 
 register = template.Library()
 
@@ -103,14 +104,41 @@ def van_bottle_stock():
     # Query to get total count of "5 Gallon" bottles per route
     route_stock_data = (
         VanProductItems.objects.filter(product=product_5gallon)
-        .values('van_stock__van__van_master__routes')
+        .values('van_stock__van__van_master__routes__route_id')
         .annotate(total_bottles=Sum('count'))
     )
 
     # Store results in a dictionary {route_id: total_count}
     route_stock_counts = {
-        str(item['van_stock__van__van_master__routes']): item['total_bottles']
-        for item in route_stock_data
+        str(item['van_stock__van__van_master__routes__route_id']): item['total_bottles']
+        for item in route_stock_data if item['van_stock__van__van_master__routes__route_id']  # Avoid None keys
     }
 
     return route_stock_counts
+
+
+@register.simple_tag
+def get_missed_customer_count(request, route_id, date):
+    planned_customers = find_customers(request, str(date), route_id) or []
+    customer_ids = [
+        customer['customer_id'] if not isinstance(customer['customer_id'], dict) else customer['customer_id'].get('id')
+        for customer in planned_customers
+    ]
+
+    supplied_customers_from_schedule = CustomerSupply.objects.filter(
+        customer__pk__in=customer_ids,
+        created_date__date=date
+    ).count()
+
+    supplied_customers_from_clients = CustomerSupply.objects.filter(
+        customer__routes__pk=route_id,
+        created_date__date=date
+    ).exclude(customer__pk__in=customer_ids).count()
+
+    return {
+        'actual_customers': Customers.objects.filter(routes__pk=route_id, is_active=True).count(),
+        'planned_visitors': len(planned_customers),
+        'missed_customers': len(planned_customers) - supplied_customers_from_schedule,
+        'supplied_customers_from_schedule': supplied_customers_from_schedule,
+        'supplied_customers_from_clients': supplied_customers_from_clients,
+    }

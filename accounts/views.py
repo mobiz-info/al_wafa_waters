@@ -40,6 +40,35 @@ from django.shortcuts import render, redirect, get_object_or_404
 from .forms import CustomPasswordChangeForm
 
 # Create your views here.
+@csrf_exempt
+def move_schedule_view(request):
+    if request.method == 'POST':
+        data = json.loads(request.body)
+        date = data.get('date')
+        customers = data.get('customers')
+        
+        for customer_id in customers:
+            customer_instance = Customers.objects.get(pk=customer_id)
+            product_instance = ProdutItemMaster.objects.get(product_name="5 Gallon")
+            
+            if not DiffBottlesModel.objects.filter(product_item=product_instance,customer=customer_instance,delivery_date=date).exists():
+                DiffBottlesModel.objects.create(
+                    product_item=product_instance,
+                    quantity_required=customer_instance.no_of_bottles_required,
+                    delivery_date=date,
+                    assign_this_to=customer_instance.sales_staff,
+                    mode="paid",
+                    amount=customer_instance.no_of_bottles_required * customer_instance.get_water_rate(),
+                    discount_net_total=customer_instance.no_of_bottles_required * customer_instance.get_water_rate(),
+                    created_by=request.user.id,
+                    created_date=datetime.today(),
+                    customer=customer_instance,
+                )
+
+        return JsonResponse({'status': 'success'})
+    return JsonResponse({'error': 'Invalid request'}, status=400)
+    
+
 def user_login(request):
     template_name = 'registration/user_login.html'
 
@@ -76,7 +105,7 @@ def user_login(request):
                 description=f"Failed login attempt for username: {username}."
             )
 
-    return render(request, template_name)
+    return render(request, template_name)   
 
 class UserLogout(View):
 
@@ -1366,7 +1395,9 @@ class NonVisitedCustomersView(View):
 
                 # Actual visit
                 visited_customers = CustomerSupply.objects.filter(salesman_id=salesman_id, created_date__date=date)
-                todays_customers = find_customers(request, str(date), van_route.routes.pk)
+                todays_customers = find_customers(request, str(date), van_route.routes.pk) or []
+
+                # todays_customers = find_customers(request, str(date), van_route.routes.pk)
                 # # Convert each dictionary to a tuple of items for hashing
                 # planned_visit = set(tuple(customer.items()) for customer in todays_customers)
                 # visited = set(visited_customers.values_list('customer_id', flat=True))
@@ -1434,60 +1465,70 @@ class MissingCustomersView(View):
     template_name = 'accounts/missing_customers.html'
 
     def get(self, request, *args, **kwargs):
-        date = datetime.now().date()  # Or pass this as an argument if needed
+        filter_data = {}
+        request_date = request.GET.get('date')
+        
+        if request_date:
+            request_date = datetime.strptime(request_date, '%Y-%m-%d').date()
+            filter_data['filter_date'] = request_date.strftime('%Y-%m-%d')
+        else:
+            request_date = datetime.now().date()
+            filter_data['filter_date'] = request_date.strftime('%Y-%m-%d')
 
         routes = RouteMaster.objects.all()  # Get all RouteMaster instances
-        route_data = []
+        # route_data = []
 
-        for route in routes:
-            route_id = route.route_id  # Use route_id from RouteMaster
-            actual_visitors = Customers.objects.filter(routes__pk=route_id, is_active=True).count()
+        # for route in routes:
+        #     route_id = route.route_id  # Use route_id from RouteMaster
+        #     actual_visitors = Customers.objects.filter(routes__pk=route_id, is_active=True).count()
 
-            planned_visitors_list = find_customers(request, str(date), route_id)  # Ensure this returns a list
-            planned_visitors = len(planned_visitors_list) if planned_visitors_list else 0
+        #     planned_visitors_list = find_customers(request, str(date), route_id)  # Ensure this returns a list
+        #     planned_visitors = len(planned_visitors_list) if planned_visitors_list else 0
 
-            supplied_customers = CustomerSupply.objects.filter(
-                customer__routes__pk=route_id,
-                created_date__date=date
-            ).count()
+        #     supplied_customers = CustomerSupply.objects.filter(
+        #         customer__routes__pk=route_id,
+        #         created_date__date=date
+        #     ).count()
 
-            if isinstance(planned_visitors_list, list):
-                todays_customers_dict = planned_visitors_list
-            else:
-                todays_customers_dict = []
+        #     if isinstance(planned_visitors_list, list):
+        #         todays_customers_dict = planned_visitors_list
+        #     else:
+        #         todays_customers_dict = []
 
-            visited_customers_ids = set(
-                CustomerSupply.objects.filter(
-                    customer__routes__pk=route_id,
-                    created_date__date=date
-                ).values_list('customer_id', flat=True)
-            )
+        #     visited_customers_ids = set(
+        #         CustomerSupply.objects.filter(
+        #             customer__routes__pk=route_id,
+        #             created_date__date=date
+        #         ).values_list('customer_id', flat=True)
+        #     )
 
-            # Filter out visited customers
-            missed_customers = [
-                customer for customer in todays_customers_dict 
-                if customer['customer_id'] not in visited_customers_ids
-            ]
+        #     # Filter out visited customers
+        #     missed_customers = [
+        #         customer for customer in todays_customers_dict 
+        #         if customer['customer_id'] not in visited_customers_ids
+        #     ]
 
-            missed_customers_count = len(missed_customers)
-            print("missed_customers_count", missed_customers_count)
+        #     missed_customers_count = len(missed_customers)
+        #     # print("missed_customers_count", missed_customers_count)
 
-            route_data.append({
-                'route_name': route.route_name,  
-                'actual_visitors': actual_visitors,
-                'planned_visitors': planned_visitors,
-                'missed_customers': missed_customers_count,
-                'supplied_customers': supplied_customers,
-                'route_id': route.route_id  
-            })
+            # route_data.append({
+            #     'route_name': route.route_name,  
+            #     'actual_visitors': actual_visitors,
+            #     'planned_visitors': planned_visitors,
+            #     'missed_customers': missed_customers_count,
+            #     'supplied_customers': supplied_customers,
+            #     'route_id': route.route_id  
+            # })
 
-        log_activity(
-                created_by=request.user.username, 
-                description=f"Processed route: {route.route_name}. Missed customers count: {missed_customers_count}"
-            )
+        # log_activity(
+        #         created_by=request.user.username, 
+        #         description=f"Processed route: {route.route_name}. Missed customers count: {missed_customers_count}"
+        #     )
         
         context = {
-            'route_data': route_data
+            'route_data': routes,
+            'filter_data': filter_data,
+            'request_date': request_date
         }
 
         return render(request, self.template_name, context)
@@ -1557,29 +1598,40 @@ class MissedOnDeliveryView(View):
     template_name = 'accounts/missed_on_delivery.html'
 
     def get(self, request, route_id, *args, **kwargs):
-        date = timezone.now().date()
-        van_route = get_object_or_404(Van_Routes, routes__route_id=route_id)
-        print("van_route",van_route)
-        planned_customers = find_customers(request, str(date), route_id)
+        filter_data = {}
+        request_date_str = request.GET.get('request_date')
+
+        if request_date_str:
+            # try:
+            request_date = datetime.strptime(request_date_str, '%Y-%m-%d').date()
+            # except ValueError:
+                # request_date = datetime.now().date()
+        else:
+            request_date = datetime.now().date()
+
+        filter_data['filter_date'] = request_date.strftime('%Y-%m-%d')
+        
+        planned_customers = find_customers(request, str(request_date), route_id) or []
 
         supplied_customers_ids = CustomerSupply.objects.filter(
             customer__routes__route_id=route_id,
-            created_date__date=date
+            created_date__date=request_date
         ).values_list('customer_id', flat=True)
 
         missed_customers = []
         for customer in planned_customers:
             if customer['customer_id'] not in supplied_customers_ids:
-                last_supply = CustomerSupply.objects.filter(
-                    customer_id=customer['customer_id']
-                ).order_by('-created_date').last()
+                if (last_supply_instances:=CustomerSupply.objects.filter(customer_id=customer['customer_id'])).exists():
+                    last_supply = last_supply_instances.latest('-created_date')
 
-                last_sold_date = last_supply.created_date if last_supply else None
+                    last_sold_date = last_supply.created_date if last_supply else None
+                else:
+                    last_sold_date = None
 
                 # Get the reason for non-visit if exists
                 non_visit_report = NonvisitReport.objects.filter(
                     customer_id=customer['customer_id'],
-                    supply_date=date
+                    supply_date=request_date
                 ).last()
 
                 reason_for_non_visit = non_visit_report.reason if non_visit_report else None
@@ -1590,8 +1642,8 @@ class MissedOnDeliveryView(View):
 
         log_activity(
                     created_by=request.user.username,
-                    description=f"Missed customer ID: {customer['customer_id']} for route ID: {route_id} on date: {date}. Last sold date: {last_sold_date}, Reason: {reason_for_non_visit}"
-                )
+                    description=f"Missed Page for route ID: {route_id} on date: {date}."
+                    )                   
         
         context = {
             'missed_customers': missed_customers,
@@ -1608,7 +1660,7 @@ class MissedOnDeliveryPrintView(View):
     
     def get(self, request, route_id, *args, **kwargs):
         date = timezone.now().date()
-        van_route = get_object_or_404(Van_Routes, routes__route_id=route_id)
+        route = get_object_or_404(RouteMaster, route_id=route_id)
 
         planned_customers = find_customers(request, str(date), route_id)
 

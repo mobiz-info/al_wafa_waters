@@ -96,6 +96,5 @@ urlpatterns = [
     path('freelance_van_issue_report/', freelance_van_issue_report, name='freelance_van_issue_report'),
     path('freelance_van_issue_list/<uuid:van_id>/', freelance_van_issue_list, name='freelance_van_issue_list'),
     
-    path('route_wise_bottle_count/', route_wise_bottle_count, name='route_wise_bottle_count'),
 
 ]

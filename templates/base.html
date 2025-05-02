@@ -8,10 +8,10 @@
     <meta charset="UTF-8">
     <meta name='viewport' content='width=device-width, initial-scale=1.0'>
     <meta http-equiv="X-UA-Compatible" content="IE=edge">
-    <title>Al Wafa Water</title>
-    <meta name="Description" content="Al Wafa Water admin dashboard">
+    <title>Sana Water</title>
+    <meta name="Description" content="Sana water admin dashboard">
     <meta name="Author" content="Mobiz Technologies">
-	<meta name="keywords" cSanant="Al Wafa Water admin dashboard">
+	<meta name="keywords" content="Sana water admin dashboard">
 
     <!-- Favicon -->
     <link rel="icon" href="{%static 'images/brand-logos/desktop-logos.png'%}" type="image/x-icon">
@@ -1203,6 +1203,13 @@
                                 <li class="slide">
                                     <a href="{% url 'audit_report' %}" class="side-menu__item">Audit Report</a>
                                 </li>
+                                {% comment %} <li class="slide">
+                                    <a href="{% url 'route_wise_bottle_count' %}" class="side-menu__item">Route Wise Bottle Count Report</a>
+                                </li> {% endcomment %}
+                                <li class="slide">
+                                    <a href="{% url 'custody_custom_list' %}" class="side-menu__item">Custody Custom Report</a>
+                                </li>
+
                             </ul>
                         </li>
 
@@ -1340,7 +1347,7 @@
                                     <a href="{% url 'non_visited_customers' %}" class="side-menu__item">Non Visited Customer</a>
                                 </li>
                                 <li class="slide">
-                                    <a href="{% url 'missing_customers' %}" class="side-menu__item">Missing Customer</a>
+                                    <a href="{% url 'missing_customers' %}" class="side-menu__item">Missed Customer</a>
                                 </li>
                                  <li class="slide">
                                     <a href="{% url 'inactive_customers' %}" class="side-menu__item">Inactive Customer</a>
@@ -1393,6 +1400,9 @@
                                 </li>
                                 <li class="slide">
                                     <a href="{% url 'eligible_customers' %}" class="side-menu__item">Eligible Customers</a>
+                                </li>
+                                <li class="slide">
+                                    <a href="{% url 'customer_custody_stock' %}" class="side-menu__item">Custody Stock</a>
                                 </li>
                             </ul>
                         </li>
