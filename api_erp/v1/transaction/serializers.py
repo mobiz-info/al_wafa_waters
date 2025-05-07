@@ -345,7 +345,8 @@ class TransactionCusomerSupplySerializer(serializers.ModelSerializer):
     route = serializers.CharField(source="customer.routes.route_name", read_only=True)
     van_id = serializers.SerializerMethodField()
     van_plate = serializers.SerializerMethodField()
-    location = serializers.CharField(source='customer.location', read_only=True)
+    location_id = serializers.SerializerMethodField()
+    location_name = serializers.SerializerMethodField()
     receipt_no = serializers.SerializerMethodField()
     receipt_date = serializers.SerializerMethodField()
     status = serializers.SerializerMethodField()
@@ -358,7 +359,7 @@ class TransactionCusomerSupplySerializer(serializers.ModelSerializer):
             "id",'date',"transaction_type", "customer_id", "custom_id", "customer_name",
             'discount','net_taxable','vat_amount','grand_total','amount_collected','payment_type',
             "ref_invoice_no","invoice_number","sales_type","emp_id","emirate_id","emirate_name",
-            "branch_name","route","van_id","van_plate",'location','receipt_no','receipt_date','status','products','branch_name','branch_id'
+            "branch_name","route","van_id","van_plate",'location_id','location_name','receipt_no','receipt_date','status','products','branch_name','branch_id'
             ]
     
     def get_date(self, obj):
@@ -369,6 +370,18 @@ class TransactionCusomerSupplySerializer(serializers.ModelSerializer):
     
     def get_van_plate(self,obj):
         return Van.objects.get(salesman=obj.salesman).plate
+    
+    def get_location_id(self,obj):
+        try :
+            return obj.customer.location.pk
+        except:
+            return ""
+    
+    def get_location_name(self,obj):
+        try :
+            return obj.customer.location.location_name
+        except:
+            return ""
     
     def get_transaction_type(self,obj):
         return "supply"
@@ -449,8 +462,9 @@ class TransactionCusomerCouponSerializer(serializers.ModelSerializer):
     route = serializers.CharField(source="customer.routes.route_name", read_only=True)
     van_id = serializers.SerializerMethodField()
     van_plate = serializers.SerializerMethodField()
-    location = serializers.CharField(source='customer.location', read_only=True)
-    payment_type = serializers.SerializerMethodField()
+    location_id = serializers.SerializerMethodField()
+    location_name = serializers.SerializerMethodField()
+    # payment_mode = serializers.SerializerMethodField()
     
     receipt_no = serializers.SerializerMethodField()
     receipt_date = serializers.SerializerMethodField()
@@ -464,7 +478,7 @@ class TransactionCusomerCouponSerializer(serializers.ModelSerializer):
             "id",'date',"transaction_type", "customer_id", "custom_id", "customer_name",'payment_type',
             'discount','net_taxable','grand_total','amount_collected',
             "ref_invoice_no","invoice_number","sales_type","emp_id","emirate_id","emirate_name",
-            "branch_id","branch_name","route","van_id","van_plate",'location','receipt_no','receipt_date','status','products'
+            "branch_id","branch_name","route","van_id","van_plate",'location_id','location_name','receipt_no','receipt_date','status','products'
             ]
     
     def get_date(self, obj):
@@ -475,6 +489,18 @@ class TransactionCusomerCouponSerializer(serializers.ModelSerializer):
     
     def get_van_plate(self,obj):
         return Van.objects.get(salesman=obj.salesman).plate
+    
+    def get_location_id(self,obj):
+        try :
+            return obj.customer.location.pk
+        except:
+            return ""
+    
+    def get_location_name(self,obj):
+        try :
+            return obj.customer.location.location_name
+        except:
+            return ""
     
     def get_transaction_type(self,obj):
         return "coupon_recharge"
@@ -538,8 +564,8 @@ class TransactionCollectionPaymentSerializer(serializers.ModelSerializer):
     branch_name = serializers.CharField(source="salesman.branch_id.branch_name", read_only=True)
     branch_id = serializers.CharField(source="salesman.branch_id.pk", read_only=True)
     route = serializers.CharField(source="customer.routes.route_name", read_only=True)
-    location_id = serializers.CharField(source="customer.location.pk", read_only=True)
-    location_name = serializers.CharField(source="customer.location.location_name", read_only=True)
+    location_id = serializers.SerializerMethodField()
+    location_name = serializers.SerializerMethodField()
     van_id = serializers.SerializerMethodField()
     van_plate = serializers.SerializerMethodField()
 
@@ -563,6 +589,18 @@ class TransactionCollectionPaymentSerializer(serializers.ModelSerializer):
     
     def get_van_plate(self,obj):
         return Van.objects.get(salesman=obj.salesman).plate
+    
+    def get_location_id(self,obj):
+        try :
+            return obj.customer.location.pk
+        except:
+            return ""
+    
+    def get_location_name(self,obj):
+        try :
+            return obj.customer.location.location_name
+        except:
+            return ""
 
     def get_collection_date(self, obj):
         return obj.created_date.date() if obj.created_date else None

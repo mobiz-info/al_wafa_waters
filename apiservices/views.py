@@ -1586,9 +1586,6 @@ class Customer_API(APIView):
                 )
                 return Response(serializer.data, status=status.HTTP_200_OK)
             queryset = Customers.objects.filter(is_deleted=False)
-            if (van_routes:=Van_Routes.objects.filter(van__salesman=request.user)).exists():
-                route_ids = van_routes.values_list("routes__pk")
-                queryset = queryset.filter(routes__pk__in=route_ids)
             serializer = CustomersSerializers(queryset, many=True)
             log_activity(
                 created_by=request.user.id,
@@ -3965,7 +3962,7 @@ class create_customer_supply(APIView):
                         product=ProdutItemMaster.objects.get(product_name="5 Gallon"),
                     )
                     custody_stock.reference_no = f"supply {customer_supply.customer.custom_id} - {customer_supply.created_date}"   
-                    custody_stock.quantity = allocate_bottle_to_custody
+                    custody_stock.quantity += allocate_bottle_to_custody
                     custody_stock.save()
                     
                     if (bottle_count := BottleCount.objects.filter(van=van, created_date__date=customer_supply.created_date.date())).exists():
@@ -4009,8 +4006,9 @@ class create_customer_supply(APIView):
                     #     out_report.save()
                         
                     # empty bottle calculate
-                    if total_fivegallon_qty < Decimal(customer_supply.collected_empty_bottle) :
-                        balance_empty_bottle = Decimal(collected_empty_bottle) - total_fivegallon_qty
+                    total_fivegallon_qty_ex_others = total_fivegallon_qty - (Decimal(allocate_bottle_to_pending) + Decimal(allocate_bottle_to_custody) + Decimal(allocate_bottle_to_paid))
+                    if total_fivegallon_qty_ex_others < Decimal(customer_supply.collected_empty_bottle) :
+                        balance_empty_bottle = Decimal(collected_empty_bottle) - total_fivegallon_qty_ex_others
                         if CustomerOutstandingReport.objects.filter(customer=customer_supply.customer,product_type="emptycan").exists():
                             outstanding_instance = CustomerOutstandingReport.objects.get(customer=customer_supply.customer,product_type="emptycan")
                             outstanding_instance.value -= Decimal(balance_empty_bottle)
@@ -4019,8 +4017,8 @@ class create_customer_supply(APIView):
                         customer_supply.outstanding_bottle_added = True
                         customer_supply.save()
                     
-                    elif total_fivegallon_qty > Decimal(customer_supply.collected_empty_bottle) :
-                        balance_empty_bottle = total_fivegallon_qty - Decimal(customer_supply.collected_empty_bottle)
+                    elif total_fivegallon_qty_ex_others > Decimal(customer_supply.collected_empty_bottle) :
+                        balance_empty_bottle = total_fivegallon_qty_ex_others - Decimal(customer_supply.collected_empty_bottle)
                         customer_outstanding_empty_can = CustomerOutstanding.objects.create(
                             customer=customer_supply.customer,
                             product_type="emptycan",
@@ -7113,7 +7111,7 @@ class NextVisitDateAPI(APIView):
     def get(self, request):
         try:
             customer = Customers.objects.get(user_id=request.user)
-            if not customer.visit_schedule and not customer.visit_schedule is None:
+            if not customer.visit_schedule is None:
                 next_visit_date = get_next_visit_date(customer.visit_schedule)
             
             return Response({
@@ -7617,8 +7615,8 @@ class CustomerOrdersAPIView(APIView):
                 cart_item.delete() 
                 
                 salesman_body = f'A new request has been created. for {customer.customer_name}'
-                notification(customer.sales_staff.pk, "New Water Request", salesman_body, "alwafa")
-                notification(customer.user_id.pk, "New Water Request", "Your Request Created Succesfull.", "alwafa")
+                notification(customer.sales_staff.pk, "New Water Request", salesman_body, "sanawater")
+                notification(customer.user_id.pk, "New Water Request", "Your Request Created Succesfull.", "sanawater")
             
             customer_cart.order_status = True
             customer_cart.save()

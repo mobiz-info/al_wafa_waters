@@ -2071,7 +2071,7 @@ def update_request_status(request, pk):
     return redirect('salesman_customer_requests_list')
 
 #--------------------------------------auditing-------------------------------------------
-
+from van_management.templatetags.van_template_tags import get_audit_details
 def audit_report(request):
     audits = AuditBase.objects.select_related('route', 'marketing_executieve').annotate(
         total_customers=Count('route__customer_route', distinct=True),
@@ -2131,10 +2131,47 @@ def audit_detail(request, audit_id):
     #         'bottle_count': audit_bottles,
     #         'bottle_variation': bottle_variation,
     #     })
+    total_previous_outstanding_amount = 0
+    total_audit_outstanding_amount = 0
+    total_amount_variation = 0
+
+    total_previous_outstanding_coupon = 0
+    total_audit_outstanding_coupon = 0
+    total_coupon_variation = 0
+
+    total_previous_bottle = 0
+    total_audit_bottle = 0
+    total_bottle_variation = 0
+
+    for item in audit_details:
+        audit_data = get_audit_details(item.pk)
+
+        total_previous_outstanding_amount += item.previous_outstanding_amount or 0
+        total_audit_outstanding_amount += item.outstanding_amount or 0
+        total_amount_variation += audit_data["amount_variation"]
+
+        total_previous_outstanding_coupon += item.previous_outstanding_coupon or 0
+        total_audit_outstanding_coupon += item.outstanding_coupon or 0
+        total_coupon_variation += audit_data["coupon_variation"]
+
+        total_previous_bottle += item.previous_bottle_outstanding or 0
+        total_audit_bottle += item.bottle_outstanding or 0
+        total_bottle_variation += audit_data["bottle_variation"]
 
     context = {
         'audit': audit,
         'audit_details': audit_details,  
+        'totals': {
+            'previous_outstanding_amount': total_previous_outstanding_amount,
+            'audit_outstanding_amount': total_audit_outstanding_amount,
+            'amount_variation': total_amount_variation,
+            'previous_outstanding_coupon': total_previous_outstanding_coupon,
+            'audit_outstanding_coupon': total_audit_outstanding_coupon,
+            'coupon_variation': total_coupon_variation,
+            'previous_bottle': total_previous_bottle,
+            'audit_bottle': total_audit_bottle,
+            'bottle_variation': total_bottle_variation,
+        }
     }
     
     return render(request, 'van_management/audit_detail.html', context)

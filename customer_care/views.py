@@ -549,7 +549,7 @@ class Coupon_Purchse_Create(View):
                         f'Number of leaflets: {no_of_leaflets}. '
                         f'Your total leaflets count is {total_leaflets}.'
                     )
-                    notification(id_customer.user_id.pk, "Coupon Purchase", notification_body, "alwafacustomer")
+                    notification(id_customer.user_id.pk, "Coupon Purchase", notification_body, "Sanawatercustomer")
                 except Exception as e:
                     print(f"Notification error: {e}")
                     messages.error(request, f'Error sending notification: {e}', 'alert-danger')
@@ -694,7 +694,7 @@ class NewRequestHome(View):
     #             if customer.sales_staff:
     #                 sales_man = customer.sales_staff
     #                 print(sales_man,'sales_man')
-    #                 notification_customer(sales_man.pk, "New Request", "A new request has been created.", "alwafacustomer")
+    #                 notification_customer(sales_man.pk, "New Request", "A new request has been created.", "Sanawatercustomer")
 
     #             messages.success(request, 'Bottles Successfully Added.', 'alert-success')
     #             return redirect('requestType')
@@ -725,8 +725,8 @@ class NewRequestHome(View):
                     sales_man = customer.sales_staff
                     try:
                         salesman_body = f'A new request has been created. for {customer.customer_name}'
-                        notification(sales_man.pk, "New Water Request", salesman_body, "alwafa")
-                        notification(customer.user_id.pk, "New Water Request", "Your Request Created Succesfull.", "alwafa")
+                        notification(sales_man.pk, "New Water Request", salesman_body, "sanawater")
+                        notification(customer.user_id.pk, "New Water Request", "Your Request Created Succesfull.", "sanawater")
                     except CustomUser.DoesNotExist:
                         messages.error(request, 'Salesman does not exist.', 'alert-danger')
                     except Send_Notification.DoesNotExist:

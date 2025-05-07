@@ -10,9 +10,7 @@ class Command(BaseCommand):
 
     def handle(self, *args, **kwargs):
         today = timezone.now().date()
-        print(today)
         yesterday = today - timedelta(days=1)
-        print(yesterday)
         total_stock = 0
         nextday_stock = 0
         

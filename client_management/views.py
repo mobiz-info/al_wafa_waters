@@ -1887,7 +1887,7 @@ def custody_issue(request):
                     f'Customer custody issued for {customer}. Bottles issued: {total_bottles_issued}, '
                     f'Quotation deposit amount: {deposit_amount}, Agreement number: {agreement_no}.'
                 )
-                notification(sales_man.pk, "Custody Issued", salesman_body, "alwafafcm")
+                notification(sales_man.pk, "Custody Issued", salesman_body, "Sanawaterfcm")
                 
                 # Customer notification
                 customer_body = (
@@ -1896,7 +1896,7 @@ def custody_issue(request):
                     f'\nQuotation deposit amount: {deposit_amount}, '
                     f'\nAgreement number: {agreement_no}.'
                 )
-                notification(customer.user_id.pk, "Custody Issued", customer_body, "alwafacustomer")
+                notification(customer.user_id.pk, "Custody Issued", customer_body, "Sanawatercustomer")
 
             except CustomUser.DoesNotExist:
                 messages.error(request, 'Salesman does not exist.', 'alert-danger')

@@ -1,7 +1,7 @@
 {% extends 'base.html' %}
 {% block title %} Audit Details Report {% endblock %}
 {% block content %}
-{% load client_templatetags %}
+
 {% load van_template_tags %}
 
 <!-- Page Header -->
@@ -124,7 +124,22 @@
                                         </tr>
                                         {% endfor %}
                                     </tbody>
+                                    <tfoot>
+                                        <tr style="font-weight: bold;">
+                                            <td colspan="3" class="text-end">Total</td>
+                                            <td>{{ totals.previous_outstanding_amount }}</td>
+                                            <td>{{ totals.audit_outstanding_amount }}</td>
+                                            <td>{{ totals.amount_variation }}</td>
+                                            <td>{{ totals.previous_outstanding_coupon }}</td>
+                                            <td>{{ totals.audit_outstanding_coupon }}</td>
+                                            <td>{{ totals.coupon_variation }}</td>
+                                            <td>{{ totals.previous_bottle }}</td>
+                                            <td>{{ totals.audit_bottle }}</td>
+                                            <td>{{ totals.bottle_variation }}</td>
+                                        </tr>
+                                    </tfoot>
                                 </table>
+                            </div>
                         </div>
                     </div>
                 </div>

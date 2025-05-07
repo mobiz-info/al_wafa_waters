@@ -118,10 +118,10 @@ def get_next_visit_date(visit_schedule):
         
         week_days = []
         
-        if visit_schedule:
-            for day, weeks in visit_schedule.items():
-                if week_number in weeks:
-                    week_days.append(day)
+
+        for day, weeks in visit_schedule.items():
+            if week_number in weeks:
+                week_days.append(day)
         
         visit_dates = get_dates_for_days(week_days, week_offset)
         
