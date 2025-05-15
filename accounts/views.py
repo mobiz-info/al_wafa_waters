@@ -19,6 +19,7 @@ from django.shortcuts import render, redirect
 from django.contrib import messages
 from django.contrib.auth.views import LoginView
 from django.urls import reverse
+from django.db import transaction, IntegrityError
 
 from competitor_analysis.forms import CompetitorAnalysisFilterForm
 from master.functions import generate_form_errors, get_custom_id, log_activity
@@ -793,52 +794,85 @@ def create_customer(request):
     template_name = 'accounts/create_customer.html'
     form = CustomercreateForm(branch)
     context = {"form":form}
-    try:
-        if request.method == 'POST':
-            form = CustomercreateForm(branch,data = request.POST)
-            context = {"form":form}
-            if form.is_valid():
-                mobile_no = form.cleaned_data.get("mobile_no")
-                customer_name = form.cleaned_data.get("customer_name")
+    
+    if request.method == 'POST':
+        try:
+            with transaction.atomic():
+                form = CustomercreateForm(branch,data = request.POST)
+                context = {"form":form}
+                if form.is_valid():
+                    mobile_no = form.cleaned_data.get("mobile_no")
+                    customer_name = form.cleaned_data.get("customer_name")
 
-                if mobile_no:
-                    hashed_password = make_password(mobile_no)
+                    if mobile_no:
+                        hashed_password = make_password(mobile_no)
 
-                    customer_user_data = CustomUser.objects.create(
-                        password=hashed_password,
-                        username=mobile_no,
-                        first_name=customer_name,
-                        user_type='Customer'
+                        customer_user_data = CustomUser.objects.create(
+                            password=hashed_password,
+                            username=mobile_no,
+                            first_name=customer_name,
+                            user_type='Customer'
+                        )
+                    
+                    data = form.save(commit=False)
+                    data.created_by = str(request.user)
+                    data.created_date = datetime.now()
+                    data.emirate = data.location.emirate
+                    branch_id = request.user.branch_id.branch_id
+                    branch = BranchMaster.objects.get(branch_id=branch_id)
+                    data.branch_id = branch
+                    data.custom_id = get_custom_id(Customers)
+                    if mobile_no:
+                        data.user_id = customer_user_data
+                    data.save()
+                    Staff_Day_of_Visit.objects.create(customer = data)
+                    
+                    log_activity(
+                        created_by=request.user,
+                        description=f"Created customer {data.custom_id} - {data.customer_name}"
                     )
-                
-                data = form.save(commit=False)
-                data.created_by = str(request.user)
-                data.created_date = datetime.now()
-                data.emirate = data.location.emirate
-                branch_id = request.user.branch_id.branch_id
-                branch = BranchMaster.objects.get(branch_id=branch_id)
-                data.branch_id = branch
-                data.custom_id = get_custom_id(Customers)
-                if mobile_no:
-                    data.user_id = customer_user_data
-                data.save()
-                Staff_Day_of_Visit.objects.create(customer = data)
-                
-                log_activity(
-                    created_by=request.user,
-                    description=f"Created customer {data.custom_id} - {data.customer_name}"
-                )
-                
-                messages.success(request, 'Customer Created successfully!')
-                return redirect('customers')
-            else:
-                messages.success(request, 'Invalid form data. Please check the input.')
-                return render(request, template_name,context)
+                    
+                    response_data = {
+                        "status": "true",
+                        "title": "Successfully Created",
+                        "message": "Customer Created successfully.",
+                        'redirect': 'true',
+                        "redirect_url": reverse('customers')
+                    }
+                    
+                else:
+                    message = generate_form_errors(form, formset=False)
+                    
+                    response_data = {
+                    "status": "false",
+                    "title": "Failed",
+                    "message": message,
+                    }
+                    
+        except IntegrityError as e:
+            log_activity(
+                created_by=request.user,
+                description=f"IntegrityError while creating customer {str(e)}"
+            )
+            # Handle database integrity error
+            response_data = {
+                "status": "false",
+                "title": "Failed",
+                "message": str(e),
+            }
+
+        except Exception as e:
+            # Handle other exceptions
+            response_data = {
+                "status": "false",
+                "title": "Failed",
+                "message": str(e),
+            }
+        return HttpResponse(json.dumps(response_data), content_type='application/javascript')
+    
+    else:
         return render(request, template_name,context)
-    except Exception as e:
-        message = f'Something went wrong {e}'
-        messages.success(request, message)
-        return render(request, template_name,context)
+    
         
 def load_locations(request):
     emirate_id = request.GET.get('emirate_id')
