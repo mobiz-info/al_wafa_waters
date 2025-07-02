@@ -7547,6 +7547,7 @@ class CustomerCartAPIView(APIView):
             }
             
             return Response(response_data, status=status.HTTP_400_BAD_REQUEST)
+        
 
 class CustomerOrdersAPIView(APIView):
     authentication_classes = [BasicAuthentication]
